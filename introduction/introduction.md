@@ -75,6 +75,17 @@ cd esp-idf
 
 参考代码可取材自官方 [crazyflie-demos](https://github.com/bitcraze/crazyflie-demos) 仓库，每个 demo 均自带 pinned 版本。
 
+组员可通过本目录下的 [Dockerfile](Dockerfile) 一键搭建整套环境（含 uv/Python 3.12、cflib、cfclient、固件源码与编译工具链、ESP-IDF）：
+
+```bash
+docker build -t crazyflie-env:2026.04 .
+# Linux 主机，挂载 Crazyradio USB 并转发图形界面：
+xhost +local:docker
+docker run -it --rm --device=/dev/bus/usb \
+  -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
+  crazyflie-env:2026.04
+```
+
 
 &nbsp;
 
