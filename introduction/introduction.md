@@ -37,6 +37,20 @@ AI 无人机机群对战科研实践课题，用 Openclaw 操控 Crazyflie 无�
 
 - **卓越技能（100分）**：安装ESP-IDF开发环境，在crazyflie无人机上，加装摄像头和wifi通信模组，并在电脑上看到实时回传的视频。
 
+### 4. 环境版本基线（2026-08-04）
+
+统一使用 Bitcraze 官方 2026.04 发布捆绑包，保证 firmware、cflib、cfclient 版本互相对齐：
+
+| 组件 | 版本 | 说明 |
+| --- | --- | --- |
+| crazyflie-firmware | 2026.04 | 当前最新正式版固件，`git checkout 2026.04` |
+| cflib（crazyflie-lib-python） | 0.1.32 | `pip install cflib==0.1.32`；注意 cflib2 尚无正式 release，不使用 |
+| cfclient（crazyflie-clients-python） | 2026.04 捆绑版 | 随官方发布包安装，已修复 Python 3.12 兼容性 |
+| Python | 3.12 | 使用 venv 隔离环境；官方要求 3.10+ |
+| ESP-IDF | v5.5.5 | v5.5 分支为长期支持版（支持至 2028-01）；不建议 v6.x，社区示例多基于 v5.x |
+
+参考代码可取材自官方 [crazyflie-demos](https://github.com/bitcraze/crazyflie-demos) 仓库，每个 demo 均自带 pinned 版本。
+
 
 &nbsp;
 
