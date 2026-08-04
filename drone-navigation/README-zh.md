@@ -130,9 +130,7 @@ uvicorn app.main:app --reload --port 8000
 ```bash
 python3 -m venv ~/synapse-venv   # 或：conda create -n synapse python=3.12
 ~/synapse-venv/bin/pip install matrix-synapse==1.157.1
-~/synapse-venv/bin/python -m synapse.app.homeserver \
-  --server-name localhost --config-path ~/synapse-data/homeserver.yaml \
-  --generate-config --report-stats=no
+~/synapse-venv/bin/python -m synapse.app.homeserver --server-name localhost --config-path ~/synapse-data/homeserver.yaml --generate-config --report-stats=no
 # 编辑 ~/synapse-data/homeserver.yaml：保留 127.0.0.1:8008 监听器
 # （client+admin 资源），确认 `enable_registration: false`
 

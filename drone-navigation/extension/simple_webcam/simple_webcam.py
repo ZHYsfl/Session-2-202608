@@ -58,13 +58,19 @@ def open_working_webcam():
     forever on a dead node, so 'opened OK' alone proves nothing.
     """
     candidates = [int(WEBCAM_DEVICE)] if WEBCAM_DEVICE is not None else [0, 2, 1, 3]
+    is_windows = (os.name == "nt")
     for idx in candidates:
-        path = f"/dev/video{idx}"
-        if not os.path.exists(path):
-            continue
-        cap = cv2.VideoCapture(idx)
+        if is_windows:
+            # Windows: no /dev nodes; default backend (MSMF) is the reliable one.
+            label = f"camera {idx}"
+            cap = cv2.VideoCapture(idx)
+        else:
+            label = f"/dev/video{idx}"
+            if not os.path.exists(label):
+                continue
+            cap = cv2.VideoCapture(idx)
         if not cap.isOpened():
-            log("INIT", f"WARNING: {path} failed to open (busy or metadata-only) — skipping.")
+            log("INIT", f"WARNING: {label} failed to open (busy or metadata-only) — skipping.")
             cap.release()
             continue
         deadline = time.time() + 2
@@ -72,7 +78,7 @@ def open_working_webcam():
             ret, _ = cap.read()
             if ret:
                 return idx, cap
-        log("INIT", f"WARNING: {path} opened but delivered no frames within 2 s — skipping.")
+        log("INIT", f"WARNING: {label} opened but delivered no frames within 2 s — skipping.")
         cap.release()
     return None, None
 
@@ -253,21 +259,25 @@ async def run_whip_publisher(server_url, stream_id):
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             pc.addTrack(video_track)
-            log("INIT", f"Webcam opened: {w}x{h} on /dev/video{dev}")
+            log("INIT", f"Webcam opened: {w}x{h} on device {dev}")
         else:
-            log("INIT", "WARNING: no working webcam found on /dev/video0-3. Streaming without video.")
+            log("INIT", "WARNING: no working webcam found (probed devices 0-3). Streaming without video.")
     except Exception as e:
         log("INIT", f"WARNING: Video initialization failed ({e}).")
 
     # 2. Initialize Audio Track
     player = None
-    try:
-        player = MediaPlayer('default', format='pulse')
-        if player.audio:
-            pc.addTrack(player.audio)
-            log("INIT", "Microphone audio track added successfully.")
-    except Exception as e:
-        log("INIT", f"WARNING: Audio track initialization failed ({e}).")
+    if os.name == "nt":
+        # 'pulse' is Linux-only; skip audio on Windows, video-only stream is fine.
+        log("INIT", "Audio track skipped on Windows (video-only stream).")
+    else:
+        try:
+            player = MediaPlayer('default', format='pulse')
+            if player.audio:
+                pc.addTrack(player.audio)
+                log("INIT", "Microphone audio track added successfully.")
+        except Exception as e:
+            log("INIT", f"WARNING: Audio track initialization failed ({e}).")
 
     if not pc.getSenders():
         log("INIT", "ERROR: No audio or video tracks could be initialized. Terminating.")

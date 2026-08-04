@@ -160,3 +160,12 @@ node_modules/
 dist/
 
 
+synapse-venv/
+
+# 本地开发环境数据（PostgreSQL 集群、Synapse 数据）
+pgdata/
+pgdata.log
+synapse-data/
+
+# MediaMTX 二进制与流媒体数据
+mediamtx_v1.9.0/ 
