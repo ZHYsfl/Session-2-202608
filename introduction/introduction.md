@@ -43,11 +43,35 @@ AI 无人机机群对战科研实践课题，用 Openclaw 操控 Crazyflie 无�
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
-| crazyflie-firmware | 2026.04 | 当前最新正式版固件，`git checkout 2026.04` |
-| cflib（crazyflie-lib-python） | 0.1.32 | `pip install cflib==0.1.32`；注意 cflib2 尚无正式 release，不使用 |
-| cfclient（crazyflie-clients-python） | 2026.04 捆绑版 | 随官方发布包安装，已修复 Python 3.12 兼容性 |
-| Python | 3.12 | 使用 venv 隔离环境；官方要求 3.10+ |
-| ESP-IDF | v5.5.5 | v5.5 分支为长期支持版（支持至 2028-01）；不建议 v6.x，社区示例多基于 v5.x |
+| crazyflie-firmware | 2026.04 | 当前最新正式版固件，tag 已核实存在 |
+| cflib（crazyflie-lib-python） | 0.1.32 | PyPI 最新版，要求 Python >= 3.10；注意 cflib2 尚无正式 release，不使用 |
+| cfclient（crazyflie-clients-python） | 2026.4 | PyPI 包名 `cfclient`，与 2026.04 发布捆绑对应，已修复 Python 3.12 兼容性 |
+| Python | 3.12 | 使用 uv 管理虚拟环境；官方要求 3.10+ |
+| ESP-IDF | v5.5.5 | v5.5 分支为长期支持版（支持至 2028-01），tag 已核实存在；不建议 v6.x，社区示例多基于 v5.x |
+
+以下命令已在wsl ubuntu里实测通过（2026-08-04，uv 0.11.26，Python 3.12.13）：
+
+```bash
+# 1. Python 环境（使用 uv 管理）
+uv venv --python 3.12 .venv
+source .venv/bin/activate
+uv pip install cflib==0.1.32 cfclient==2026.4
+
+# 验证：cfclient 图形客户端能正常启动
+python -m cfclient.gui
+
+# 2. 固件源码（编译需另行安装 arm-none-eabi-gcc 工具链）
+git clone https://github.com/bitcraze/crazyflie-firmware.git
+cd crazyflie-firmware
+git checkout 2026.04
+git submodule update --init --recursive
+
+# 3. ESP-IDF（卓越技能：摄像头 + WiFi 模组）
+git clone -b v5.5.5 --recursive https://github.com/espressif/esp-idf.git
+cd esp-idf
+./install.sh esp32
+. ./export.sh
+```
 
 参考代码可取材自官方 [crazyflie-demos](https://github.com/bitcraze/crazyflie-demos) 仓库，每个 demo 均自带 pinned 版本。
 
