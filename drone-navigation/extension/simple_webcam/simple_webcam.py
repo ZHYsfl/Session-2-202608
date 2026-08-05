@@ -61,9 +61,10 @@ def open_working_webcam():
     is_windows = (os.name == "nt")
     for idx in candidates:
         if is_windows:
-            # Windows: no /dev nodes; default backend (MSMF) is the reliable one.
+            # Windows: no /dev nodes; pin MSMF — OpenCV 5's default backend
+            # probing (FFmpeg/obsensor) cannot open cameras by index.
             label = f"camera {idx}"
-            cap = cv2.VideoCapture(idx)
+            cap = cv2.VideoCapture(idx, cv2.CAP_MSMF)
         else:
             label = f"/dev/video{idx}"
             if not os.path.exists(label):
