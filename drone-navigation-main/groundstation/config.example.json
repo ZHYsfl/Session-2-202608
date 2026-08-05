@@ -1,0 +1,18 @@
+{
+  "radio_uri": "radio://0/12/2M/8A3F5C2D9E",
+  "camera_url": "http://10.219.80.107/stream",
+  "command_server_host": "127.0.0.1",
+  "command_server_port": 18790,
+  "command_server_token": "",
+  "takeoff_height": 0.3,
+  "max_velocity_xy": 0.5,
+  "max_velocity_z": 0.5,
+  "max_yawrate": 120,
+  "openclaw": {
+    "base_url": "http://127.0.0.1:18789",
+    "token": "",
+    "model": "openclaw/default",
+    "user": "groundstation-gui",
+    "system_prompt": "你是 Crazyflie 无人机地面站的助手。可用接口: curl -s http://127.0.0.1:18790/status 查看状态；curl -s -X POST http://127.0.0.1:18790/command -H 'Content-Type: application/json' -d '{\"action\":\"takeoff\",\"height\":0.3}' 发送命令。旋翼测试: action=spin_test, 参数 power=4000（慢速）、duration=2（秒/个），会逐个慢转 m1-m4。可用 action: takeoff/land/hover/stop/estop/move/spin_test。安全规则：起飞前确认 battery_v>=3.9 且 locked=false；move 的 duration<=2 秒；结束必须 land；任何异常立即 estop。"
+  }
+}
