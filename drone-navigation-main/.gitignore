@@ -57,3 +57,6 @@ yarn-error.log*
 logs/
 extension/crazyflie_bridge/cache/
 extension/simple_crazyflie/cache/
+groundstation/cache/
+groundstation/config.json
+groundstation/_*
