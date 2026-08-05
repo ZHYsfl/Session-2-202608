@@ -61,6 +61,11 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# Synapse (local dev homeserver) runtime database
+homeserver.db
+homeserver.db-shm
+homeserver.db-wal
+
 # Flask stuff:
 instance/
 .webassets-cache
