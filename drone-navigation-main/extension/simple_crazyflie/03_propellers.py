@@ -45,7 +45,9 @@ from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 
-URI = 'radio://0/80/2M/E7E7E7E7E7'
+from emergency_key import EmergencyKey, EmergencyLanding, emergency_land
+
+URI = 'radio://0/12/2M/8A3F5C2D9E'
 POWER = 20000          # ~30 % — clearly visible spin, safe on the ground
 SPIN_TIME = 2.5        # seconds per motor — long enough to see direction
 PAUSE = 1.5            # between motors
@@ -122,7 +124,7 @@ DIAGRAM = """\
 
 # ── individual motor check (motorPowerSet required) ─────────────────
 
-def _spin_each_motor(cf):
+def _spin_each_motor(cf, ek=None):
     """Spin each motor one at a time; the user verifies direction."""
     print()
     print('Individual motor check — watch each propeller as it spins')
@@ -140,10 +142,25 @@ def _spin_each_motor(cf):
     ]
     for tag, param, pos, direction in motors:
         print(f'  {tag} ({pos}) — expect {direction}')
-        print(f'      spinning for {SPIN_TIME:.0f} s ...', flush=True)
-        cf.param.set_value(f'motorPowerSet.{param}', POWER)
-        time.sleep(SPIN_TIME)
-        cf.param.set_value(f'motorPowerSet.{param}', 0)
+        print(f'      spinning for {SPIN_TIME:.0f} s ... '
+              f'(press X to stop)', flush=True)
+        try:
+            cf.param.set_value(f'motorPowerSet.{param}', POWER)
+            deadline = time.monotonic() + SPIN_TIME
+            while time.monotonic() < deadline:
+                if ek is not None and ek.triggered():
+                    raise EmergencyLanding()
+                time.sleep(0.05)
+        except KeyError as e:
+            # TOC mismatch (e.g. stale cache) — never crash mid-test.
+            print(f'  ⚠️  cannot set {tag}: {e}')
+        finally:
+            # Always zero the current motor, even on an emergency stop;
+            # never let the zeroing itself raise (a stuck motor is worse).
+            try:
+                cf.param.set_value(f'motorPowerSet.{param}', 0)
+            except Exception as e2:
+                print(f'  ⚠️  failed to zero {tag}: {e2}')
         time.sleep(PAUSE)
     print()
     print('  Checklist:')
@@ -176,7 +193,7 @@ HOVER_HEIGHT = 0.20      # metres — clear of ground effect (important
 HOVER_TIME = 4.0         # seconds of hover — time to check all four
 
 
-def _pump_hover(cf, vx, vy, yaw_rate, zdistance, duration):
+def _pump_hover(cf, vx, vy, yaw_rate, zdistance, duration, ek=None):
     """Send hover setpoints at ~20 Hz for *duration* seconds.
 
     The commander watchdog expires after ~1 s without a fresh setpoint,
@@ -186,9 +203,11 @@ def _pump_hover(cf, vx, vy, yaw_rate, zdistance, duration):
     while time.monotonic() < deadline:
         cf.commander.send_hover_setpoint(vx, vy, yaw_rate, zdistance)
         time.sleep(0.05)  # ~20 Hz
+        if ek is not None and ek.triggered():
+            raise EmergencyLanding()
 
 
-def _hover_check(cf):
+def _hover_check(cf, ek=None):
     """Brief low hover — verifies the props actually produce lift.
 
     Catches a propeller mounted upside-down (spins the right way but
@@ -211,7 +230,7 @@ def _hover_check(cf):
     print()
     print(f'  Hovering at ~{HOVER_HEIGHT * 100:.0f} cm for '
           f'{HOVER_TIME:.0f} s ...')
-    _pump_hover(cf, 0, 0, 0, HOVER_HEIGHT, HOVER_TIME)
+    _pump_hover(cf, 0, 0, 0, HOVER_HEIGHT, HOVER_TIME, ek)
     print('  Touching down gently ...')
     # Ramp the altitude setpoint down over 2 s, then keep feeding z=0
     # while the drone physically settles.  Cutting the motors while the
@@ -235,6 +254,10 @@ if __name__ == '__main__':
     cflib.crtp.init_drivers()
     with SyncCrazyflie(URI, cf=Crazyflie(rw_cache='./cache')) as scf:
         time.sleep(2)
+
+        ek = EmergencyKey()
+        ek.start()
+        print('  ⚠️  EMERGENCY: press X at any time to stop / land.')
 
         _start_state_log(scf.cf)
         time.sleep(0.5)
@@ -273,7 +296,7 @@ if __name__ == '__main__':
 
         try:
             if use_motor_power:
-                _spin_each_motor(scf.cf)
+                _spin_each_motor(scf.cf, ek)
                 # Hand the motors back to the flight controller so the
                 # hover setpoints below can drive them.
                 scf.cf.param.set_value('motorPowerSet.enable', 0)
@@ -283,9 +306,14 @@ if __name__ == '__main__':
                 print('motors will spin together during the hover check.')
 
             if armed:
-                _hover_check(scf.cf)
+                _hover_check(scf.cf, ek)
             else:
                 print('Skipping the hover check (drone not armed).')
+        except EmergencyLanding:
+            print('\n[EMERGENCY] X pressed — stopping / landing ...')
+            if armed:
+                emergency_land(scf.cf, HOVER_HEIGHT)
+            print('[EMERGENCY] Stopped.')
         except KeyboardInterrupt:
             print('\n[Ctrl+C] — aborting the check.')
         finally:
@@ -305,6 +333,7 @@ if __name__ == '__main__':
             except Exception:
                 pass
             time.sleep(0.3)
+            ek.stop()
             if _locked():
                 print('NOTE: the drone latched into the LOCKED state.')
                 print('Power-cycle it before the next flight.')

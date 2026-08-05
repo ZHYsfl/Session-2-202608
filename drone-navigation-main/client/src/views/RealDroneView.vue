@@ -295,6 +295,10 @@ const primaryStream = computed(() => streams.value[0] || null);
 const selectedStream = computed(
   () => streams.value.find((s) => s.id === selectedStreamId.value) || primaryStream.value,
 );
+// The drone camera is mounted upside down on this rig — flip its video
+// vertically so the HUD and view match the real world.
+const FLIPPED_STREAM_IDS = ['crazyflie-drone'];
+const videoFlipped = computed(() => FLIPPED_STREAM_IDS.includes(selectedStream.value?.id));
 // The stream the shared connection plays — the selected card, on BOTH
 // subpages (subpage switches must not change it).
 const targetUrl = computed(() => selectedStream.value?.whep_url || '');
@@ -676,7 +680,7 @@ onUnmounted(() => {
         v-if="activeSubpage === 'host'"
         ref="hostVideoEl"
         class="host-live"
-        :class="{ 'host-live--fullscreen': liveFullscreen }"
+        :class="{ 'host-live--fullscreen': liveFullscreen, 'video--flip': videoFlipped }"
         autoplay
         muted
         playsinline
@@ -721,7 +725,7 @@ onUnmounted(() => {
             <video
               ref="viewerVideoEl"
               class="viewer-live"
-              :class="{ 'viewer-live--fullscreen': liveFullscreen }"
+              :class="{ 'viewer-live--fullscreen': liveFullscreen, 'video--flip': videoFlipped }"
               autoplay
               muted
               playsinline
@@ -864,6 +868,11 @@ onUnmounted(() => {
   object-fit: contain; /* keep the webcam's 4:3 aspect, letterbox the rest */
   background: #000;
   pointer-events: none; /* docks / HUD stay interactive above the video */
+}
+
+/* Drone camera is mounted upside down — flip vertically (CSS-only fix). */
+.video--flip {
+  transform: scaleY(-1);
 }
 
 /* ─── Livestream Viewer stage ─── */

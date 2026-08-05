@@ -10,11 +10,11 @@
 #
 # Usage:
 #   ./start_bridge.sh
-#   ./start_bridge.sh --cf-uri radio://0/80/2M/E7E7E7E7E7
+#   ./start_bridge.sh --cf-uri radio://0/12/2M/8A3F5C2D9E
 #
 # Environment variables (all optional):
 #   CRAZYFLIE_IP         — drone IP (default: 192.168.0.106)
-#   RADIO_URL            — radio URI, e.g. radio://0/80/2M/E7E7E7E7E7
+#   RADIO_URL            — radio URI, e.g. radio://0/12/2M/8A3F5C2D9E
 #                          (equivalent to --cf-uri on the command line;
 #                           if both are given the CLI --cf-uri wins)
 #   CF_NO_FLY=1          — dry-run: refuse every takeoff (bench safety)
@@ -27,13 +27,13 @@
 #   CRAZYFLIE_STREAM_URL — MJPEG source override (default: :8082/stream)
 #
 # Example (full local demo):
-#   CRAZYFLIE_IP="192.168.0.110" RADIO_URL="radio://0/80/2M/E7E7E7E7E7" \
+#   CRAZYFLIE_IP="192.168.0.110" RADIO_URL="radio://0/12/2M/8A3F5C2D9E" \
 #   TELEMETRY_SERVER="ws://127.0.0.1:8000/api/drone/telemetry/publish" \
 #   MEDIAMTX_URL="http://127.0.0.1:8889" MEDIAMTX_API="http://127.0.0.1:9997" \
 #     ./start_bridge.sh
 #
 # Production (telemetry + video default to drone-navigation.com):
-#   CRAZYFLIE_IP="192.168.0.110" RADIO_URL="radio://0/80/2M/E7E7E7E7E7" \
+#   CRAZYFLIE_IP="192.168.0.110" RADIO_URL="radio://0/12/2M/8A3F5C2D9E" \
 #     ./start_bridge.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,7 +55,7 @@ echo "[Launcher] Drone IP:      $CRAZYFLIE_IP"
 echo "[Launcher] Video proxy:   http://localhost:8082/stream"
 echo "[Launcher] WebSocket:     ws://localhost:8765"
 echo "[Launcher] Telemetry ->   ${TELEMETRY_SERVER:-wss://drone-navigation.com/api/drone/telemetry/publish}"
-echo "[Launcher] Radio URI:    ${RADIO_URL:-radio://0/80/2M/E7E7E7E7E7 (default)}"
+echo "[Launcher] Radio URI:    ${RADIO_URL:-radio://0/12/2M/8A3F5C2D9E (default)}"
 echo "[Launcher] WHIP ingest -> ${MEDIAMTX_URL:-https://drone-navigation.com/live} (id ${LIVESTREAM_ID:-crazyflie-drone})"
 
 PIDS=()

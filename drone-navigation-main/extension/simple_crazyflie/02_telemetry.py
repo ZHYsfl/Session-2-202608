@@ -10,7 +10,7 @@ from cflib.crazyflie.syncLogger import SyncLogger
 
 # URI of the Crazyflie to connect to (radio link via the Crazyradio PA):
 #   radio://<dongle>/<channel>/<datarate>/<address>
-URI = 'radio://0/80/2M/E7E7E7E7E7'
+URI = 'radio://0/12/2M/8A3F5C2D9E'
 
 # Only output errors from the logging framework
 logging.basicConfig(level=logging.ERROR)

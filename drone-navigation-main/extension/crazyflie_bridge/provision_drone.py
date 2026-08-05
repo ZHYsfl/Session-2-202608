@@ -1,4 +1,4 @@
-tu.#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Provision a Crazyflie's radio identity (channel / datarate / address).
 
 The drone stores this triple in its on-board EEPROM config block and loads it
@@ -136,6 +136,7 @@ def main():
             print('WARNING: channels >80 are outside the ISM band in many countries — check local regulations')
         if args.address is None:
             p.error('--channel needs --address')
+        channel = args.channel
         address = args.address
     else:
         channel, address = None, None
@@ -144,6 +145,7 @@ def main():
     if args.verify_only:
         if channel is None:
             p.error('--verify-only needs --team or --channel/--address')
+        cflib.crtp.init_drivers()
         uri = radio_uri(channel, speed_idx, address)
         print(f'Checking {uri} ...')
         ok = radio_check(uri)
@@ -155,12 +157,11 @@ def main():
     print(f'Connecting to {args.uri} ...')
     try:
         scf_ctx = SyncCrazyflie(args.uri, cf=Crazyflie(rw_cache='./cache'))
-        scf = scf_ctx.__enter__()
     except Exception as e:
         sys.exit(f'ERROR: cannot connect on {args.uri}: {e}\n'
                  'Drone on a DATA cable and powered on? USB permissions (udev rule / sudo)?')
 
-    with scf_ctx:
+    with scf_ctx as scf:
         mem = read_block(scf)
         show('CURRENT identity (from EEPROM)', mem.elements)
 

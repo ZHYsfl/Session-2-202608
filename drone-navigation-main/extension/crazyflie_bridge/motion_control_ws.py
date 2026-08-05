@@ -7,7 +7,7 @@ forwards them to a Crazyflie drone, and streams telemetry back.
 
 Usage:
     python3 motion_control_ws.py
-    python3 motion_control_ws.py --cf-uri radio://0/80/2M/E7E7E7E7E7 --port 8765
+    python3 motion_control_ws.py --cf-uri radio://0/12/2M/8A3F5C2D9E --port 8765
 """
 
 import argparse
@@ -563,8 +563,8 @@ class CrazyflieBridge:
 
 def main():
     parser = argparse.ArgumentParser(description="Crazyflie WebSocket Bridge")
-    parser.add_argument("--cf-uri", default="radio://0/80/2M/E7E7E7E7E7",
-                        help="Crazyflie URI (default: radio://0/80/2M/E7E7E7E7E7)")
+    parser.add_argument("--cf-uri", default="radio://0/12/2M/8A3F5C2D9E",
+                        help="Crazyflie URI (default: radio://0/12/2M/8A3F5C2D9E)")
     parser.add_argument("--port", type=int, default=8765,
                         help="WebSocket server port (default: 8765)")
     parser.add_argument("--telemetry-hz", type=int, default=10,

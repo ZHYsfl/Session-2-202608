@@ -38,7 +38,10 @@ settle below is time-based, not flag-based.
 Flight mechanism: hover setpoints (TYPE_HOVER_LEGACY on this CRTP v6
 firmware) pumped at 20 Hz.  Altitude hold uses the flow deck's distance
 sensor, which is working (range.zrange reads the real height above
-ground).  Ctrl+C cuts the motors immediately and disarms.
+ground).
+
+Emergency: press X at any time for a rapid, controlled emergency
+landing (the drone descends to the ground and the motors are cut).
 """
 import logging
 import time
@@ -49,9 +52,11 @@ from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 
+from emergency_key import EmergencyKey, EmergencyLanding, emergency_land
+
 # URI of the Crazyflie to connect to (radio link via the Crazyradio PA):
 #   radio://<dongle>/<channel>/<datarate>/<address>
-URI = 'radio://0/80/2M/E7E7E7E7E7'
+URI = 'radio://0/12/2M/8A3F5C2D9E'
 
 TAKEOFF_HEIGHT = 0.3   # metres — conservative first-flight height
 TAKEOFF_TIME = 3.0     # seconds to ramp from 0 to TAKEOFF_HEIGHT
@@ -60,6 +65,7 @@ LAND_TIME = 3.0        # seconds to ramp back down to 0
 RATE = 20.0            # Hz — setpoint rate
 STEP = 1.0 / RATE
 SETTLE_TIME = 2.0      # seconds of z=0 altitude hold after the descent
+EMERGENCY_LAND_TIME = 1.5   # fast-but-controlled emergency descent
 
 LOCKED_BIT = 0x40      # supervisor.info bit 6 — "must be restarted"
 
@@ -76,6 +82,7 @@ warnings.filterwarnings(
 
 # Live supervisor flags, refreshed by the log callback below.
 _state = {'flying': 1, 'sup': 0}
+_flight_z = 0.0        # last altitude setpoint sent (for emergency landing)
 
 
 def _state_cb(ts, data, conf):
@@ -98,27 +105,33 @@ def _locked():
 
 
 def _send(cf, vx, vy, yawrate, zdistance):
+    global _flight_z
+    _flight_z = zdistance
     cf.commander.send_hover_setpoint(vx, vy, yawrate, zdistance)
 
 
-def _hold(cf, zdistance, duration):
+def _hold(cf, zdistance, duration, ek=None):
     """Pump a constant-altitude hover setpoint for *duration* seconds."""
     deadline = time.monotonic() + duration
     while time.monotonic() < deadline:
         _send(cf, 0, 0, 0, zdistance)
         time.sleep(STEP)
+        if ek is not None and ek.triggered():
+            raise EmergencyLanding()
 
 
-def _ramp(cf, z_start, z_end, duration):
+def _ramp(cf, z_start, z_end, duration, ek=None):
     """Linearly ramp the altitude setpoint between two values."""
     steps = int(duration * RATE)
     for i in range(1, steps + 1):
         z = z_start + (z_end - z_start) * i / steps
         _send(cf, 0, 0, 0, z)
         time.sleep(STEP)
+        if ek is not None and ek.triggered():
+            raise EmergencyLanding()
 
 
-def _settle(cf, duration=SETTLE_TIME):
+def _settle(cf, duration=SETTLE_TIME, ek=None):
     """Keep feeding z=0 altitude hold after the descent ramp.
 
     Cutting the motors abruptly the instant the setpoint reaches zero
@@ -132,6 +145,8 @@ def _settle(cf, duration=SETTLE_TIME):
     while time.monotonic() < deadline:
         _send(cf, 0, 0, 0, 0)
         time.sleep(STEP)
+        if ek is not None and ek.triggered():
+            raise EmergencyLanding()
 
 
 def _arm(cf):
@@ -154,6 +169,10 @@ if __name__ == '__main__':
     with SyncCrazyflie(URI, cf=Crazyflie(rw_cache='./cache')) as scf:
         cf = scf.cf
         time.sleep(1)
+
+        ek = EmergencyKey()
+        ek.start()
+        print('  ⚠️  EMERGENCY: press X at any time for an emergency landing.')
 
         lg = _start_state_log(cf)
         time.sleep(0.5)                  # let a few samples arrive
@@ -183,10 +202,10 @@ if __name__ == '__main__':
         try:
             print(f'Taking off — ramping to {TAKEOFF_HEIGHT} m over '
                   f'{TAKEOFF_TIME:.0f} s ...')
-            _ramp(cf, 0.0, TAKEOFF_HEIGHT, TAKEOFF_TIME)
+            _ramp(cf, 0.0, TAKEOFF_HEIGHT, TAKEOFF_TIME, ek)
 
             print(f'Hovering at {TAKEOFF_HEIGHT} m for {HOVER_TIME:.0f} s ...')
-            _hold(cf, TAKEOFF_HEIGHT, HOVER_TIME)
+            _hold(cf, TAKEOFF_HEIGHT, HOVER_TIME, ek)
 
             print(f'Landing over {LAND_TIME:.0f} s ...')
             _ramp(cf, TAKEOFF_HEIGHT, 0.0, LAND_TIME)
@@ -194,6 +213,11 @@ if __name__ == '__main__':
             print('Touching down — holding z=0 while the drone settles ...')
             _settle(cf)
             print('Landed.')
+        except EmergencyLanding:
+            print(f'\n[EMERGENCY] X pressed — emergency landing from '
+                  f'{_flight_z:.2f} m ...')
+            emergency_land(cf, _flight_z, duration=EMERGENCY_LAND_TIME)
+            print('[EMERGENCY] Landed — cutting motors.')
         except KeyboardInterrupt:
             print('\n[Ctrl+C] — cutting motors immediately.')
         finally:
@@ -204,6 +228,7 @@ if __name__ == '__main__':
             cf.commander.send_notify_setpoint_stop()
             _disarm(cf)
             time.sleep(0.3)
+            ek.stop()
             if _locked():
                 print('Motors off — NOTE: the drone latched into the LOCKED')
                 print('state.  Power-cycle it before the next flight.')
