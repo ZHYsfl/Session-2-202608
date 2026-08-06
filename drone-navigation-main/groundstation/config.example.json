@@ -8,6 +8,9 @@
   "max_velocity_xy": 0.5,
   "max_velocity_z": 0.5,
   "max_yawrate": 120,
+  "monitor": {
+    "wechat_target": ""
+  },
   "openclaw": {
     "base_url": "http://127.0.0.1:18789",
     "token": "",

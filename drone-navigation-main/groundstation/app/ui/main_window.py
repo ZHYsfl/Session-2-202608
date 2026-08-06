@@ -19,8 +19,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.ui.chat_panel import ChatPanel
 from app.ui.attitude_widget import AttitudeWidget
+from app.ui.log_monitor_panel import LogMonitorPanel
 from app.ui.trajectory_widget import TrajectoryWidget
 from app.video import VideoDecoder
 
@@ -79,17 +79,11 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Vertical)
         splitter.addWidget(top)
-        if self._chat is not None:
-            oc = self._cfg.get("openclaw", {}) or {}
-            self._chat_panel = ChatPanel(
-                self._chat,
-                self._ctrl,
-                system_prompt=oc.get("system_prompt", ""),
-            )
-            splitter.addWidget(self._chat_panel)
-            splitter.setStretchFactor(0, 3)
-            splitter.setStretchFactor(1, 1)
-            splitter.setSizes([560, 220])
+        self._log_monitor = LogMonitorPanel()
+        splitter.addWidget(self._log_monitor)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([560, 220])
         self.setCentralWidget(splitter)
         self._log("按 T 起飞 | L 降落 | H 悬停 | X 急停 | Esc 停止")
         self._log("W/S/A/D 或方向键平移，Space 上升，Shift 下降，Q/E 旋转")
@@ -464,8 +458,7 @@ class MainWindow(QMainWindow):
         self._timer.stop()
         self._video_timer.stop()
         self._move_timer.stop()
-        if self._chat_panel is not None:
-            self._chat_panel.shutdown()
+        self._log_monitor.shutdown()
         self._decoder.stop()
         self._ctrl.request("hover")
 

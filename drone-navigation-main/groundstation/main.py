@@ -15,6 +15,8 @@ def main():
     from app.agent_tools import TOOLS, build_system_prompt, make_executor
     from app.config import load_config
     from app.controller import CrazyflieController
+    from app.detector import YoloDetector
+    from app.monitor import MonitorRunner
     from app.openclaw_client import OpenClawChat
     from app.ui.main_window import MainWindow
     from app.video import MjpegFetcher
@@ -54,6 +56,20 @@ def main():
     video = MjpegFetcher(cfg.get("camera_url", ""))
     video.start()
 
+    detector = YoloDetector()
+    if detector.available():
+        print(f"[GS] YOLO detector ready: {detector._model_path}")
+    else:
+        print("[GS] YOLO detector unavailable (no model found); /detect disabled")
+
+    monitor_cfg = cfg.get("monitor", {}) or {}
+    monitor = MonitorRunner(
+        detector,
+        video,
+        controller,
+        wechat_target=monitor_cfg.get("wechat_target") or None,
+    )
+
     oc_cfg = cfg.get("openclaw", {}) or {}
     chat = None
     if oc_cfg.get("base_url"):
@@ -86,6 +102,9 @@ def main():
                 host=cfg.get("command_server_host", "127.0.0.1"),
                 port=int(cfg["command_server_port"]),
                 token=cfg.get("command_server_token") or None,
+                video=video,
+                detector=detector,
+                monitor=monitor,
             )
             server.start()
             print(f"[GS] HTTP command API: http://127.0.0.1:{server.port}")

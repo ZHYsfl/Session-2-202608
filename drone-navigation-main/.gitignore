@@ -60,3 +60,5 @@ extension/simple_crazyflie/cache/
 groundstation/cache/
 groundstation/config.json
 groundstation/_*
+groundstation/yolov8n.pt
+groundstation/*.pt
