@@ -12,13 +12,13 @@
 | WSL 用户 | `serral` |
 | Node.js | `~/node-v22.23.2-linux-x64`（已写入 `~/.bashrc` PATH） |
 | conda | `~/miniconda3`，环境：`pg`（PostgreSQL）、`drone-navigation`（后端/无人机）、`synapse` |
-| 运行代码副本 | `~/drone-navigation-main`（WSL 内，README 要求不要放 /mnt/c） |
+| 运行代码副本 | `~/drone-navigation`（WSL 内，README 要求不要放 /mnt/c） |
 | 开发/提交代码 | `C:\Users\10206\Desktop\Session-2-202608\drone-navigation-main`（git 006 分支） |
 | 前端开发服务器 | 从 `/mnt/c/Users/10206/Desktop/Session-2-202608/drone-navigation-main/client` 启动 |
 | ESP32-S3 摄像头 | 只连热点 `lclMagic6` / `li20061114`（2.4GHz），默认地址见 3.1 节 |
 
-> 注意：bridge、后端、Synapse 等**运行**用的都是 `~/drone-navigation-main` 这份副本；
-> 如果改了 `/mnt/c` 仓库里的代码，记得同步到 `~/drone-navigation-main` 再重启对应服务。
+> 注意：bridge、后端、Synapse 等**运行**用的都是 `~/drone-navigation` 这份副本；
+> 如果改了 `/mnt/c` 仓库里的代码，记得同步到 `~/drone-navigation` 再重启对应服务。
 
 ---
 
@@ -33,7 +33,7 @@ export PATH="$HOME/node-v22.23.2-linux-x64/bin:$PATH"
 ~/miniconda3/envs/pg/bin/pg_ctl -D ~/pgdata -l ~/pgdata.log start
 
 # ② FastAPI 后端（端口 8000）
-cd ~/drone-navigation-main/server
+cd ~/drone-navigation/server
 setsid nohup ~/miniconda3/envs/drone-navigation/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > ~/uvicorn.log 2>&1 < /dev/null &
 
 # ③ MediaMTX（HLS 8888 / WebRTC 8889 / API 9997）
@@ -113,7 +113,7 @@ sudo chmod 0666 "$DEV"
 
 ```bash
 conda activate drone-navigation
-cd ~/drone-navigation-main/extension/simple_crazyflie
+cd ~/drone-navigation/extension/simple_crazyflie
 python 03_propellers.py            # 每个桨单独转 + 20cm 短悬停
 ```
 
@@ -147,7 +147,7 @@ python 03_propellers.py            # 每个桨单独转 + 20cm 短悬停
 
 ```bash
 conda activate drone-navigation
-cd ~/drone-navigation-main/extension/crazyflie_bridge
+cd ~/drone-navigation/extension/crazyflie_bridge
 
 # CRAZYFLIE_IP 必须填摄像头 IP（见 3.1）。注意：这行行尾不要加任何注释，
 # 行内注释会把整条命令搞坏（报 ": command not found"），环境变量就没传进去。
@@ -259,7 +259,7 @@ pkill -f "node .*vite"
 
 ```bash
 conda activate drone-navigation
-cd ~/drone-navigation-main/extension/simple_crazyflie
+cd ~/drone-navigation/extension/simple_crazyflie
 python 01_connect.py      # 链路 + 电压
 python 02_telemetry.py    # 拿起倾斜看姿态变化
 python 03_propellers.py   # 每次飞行前检查桨
@@ -275,7 +275,7 @@ python 04_flying.py       # 首次试飞：0.3m 悬停
 
 ```bash
 conda activate drone-navigation
-cd ~/drone-navigation-main/extension/crazyflie_bridge
+cd ~/drone-navigation/extension/crazyflie_bridge
 
 python provision_drone.py --read-only          # 只读当前身份（走 USB）
 python provision_drone.py --team 3 --yes       # 写入 team 3 身份：ch6 / E7E7E7E703 / 2M

@@ -24,19 +24,9 @@ DEFAULTS = {
         "token": "",
         "model": "openclaw/default",
         "user": "groundstation-gui",
-        "system_prompt": (
-            "你是 Crazyflie 无人机地面站的助手。操作无人机的接口：\n"
-            "- 查看状态: curl -s http://127.0.0.1:18790/status\n"
-            "- 发送命令: curl -s -X POST http://127.0.0.1:18790/command "
-            "-H 'Content-Type: application/json' "
-            "-d '{\"action\":\"takeoff\",\"height\":0.3}'\n"
-            "可用 action: takeoff/land/hover/stop/estop/move。\n"
-            "- 旋翼单电机慢速测试: curl -s -X POST http://127.0.0.1:18790/command "
-            "-H 'Content-Type: application/json' "
-            "-d '{\"action\":\"spin_test\",\"power\":4000,\"duration\":2}'\n"
-            "安全规则：起飞前确认 battery_v>=3.9 且 locked=false；"
-            "move 的 duration<=2 秒；结束必须 land；任何异常立即 estop。"
-        ),
+        # system_prompt 留空 = 由 app.agent_tools.build_system_prompt()
+        # 自动生成（精简、指向工具与技能）。也可在 config.json 里覆盖。
+        "system_prompt": "",
     },
 }
 

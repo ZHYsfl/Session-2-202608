@@ -4,6 +4,10 @@
 Crazyradio + cflib 控制 Crazyflie，直接读取 ESP32 摄像头画面，内置
 OpenClaw 对话面板。本手册**从零开始**，不需要看仓库里其他文档。
 
+> **给自动化 agent 使用**：每一节的末尾都提供了一段「建议提示词」（`txt`
+> 代码块）。把对应步骤的提示词原样粘贴给自动化 agent（如 OpenClaw /
+> Codex），它会按本手册执行该步骤；提示词里写明了要验证什么、报错怎么处理。
+
 ---
 
 ## 1. 硬件准备
@@ -21,6 +25,11 @@ OpenClaw 对话面板。本手册**从零开始**，不需要看仓库里其他�
 - 红灯一直闪 → 正在自检/异常，等它完成；若持续，拔电池重开
 - 两个蓝灯 ~1 Hz 闪烁 → bootloader 模式（正常升级/配置时才会进入）
 - 起飞后**LOCKED**：说明上次飞行异常断电，必须拔电池重启
+
+> 建议提供给自动化 agent 的提示词：
+```txt
+请参照第 1 节核对硬件准备和无人机开机自检（电池电压、LED 状态），逐项告诉我结果。
+```
 
 ---
 
@@ -52,6 +61,12 @@ usbipd attach --wsl --busid 1-13   # 每次 WSL 重启 / 拔插无线电棒后�
 | `hrdevmon` 警告 | bind 时加 `--force` |
 | attach 后 WSL 里还是看不到 | 拔插一次无线电棒，重复 detach → attach |
 
+> 建议提供给自动化 agent 的提示词：
+```txt
+请参照 2.1 把 Crazyradio 附加到 WSL（usbipd list → bind --force → attach）,
+完成后用 `lsusb | grep 1915` 验证并告诉我结果。不要做飞行操作。
+```
+
 ### 2.2 WSL：确认设备 + 权限
 
 在 WSL 终端确认设备出现了：
@@ -77,6 +92,12 @@ sudo udevadm control --reload && sudo udevadm trigger
 > **重要**：一个 Crazyradio 同一时间只能被一个程序占用。运行地面站前，
 > 停掉 `start_bridge.sh`、`motion_control_ws.py`、`01~05_*.py` 等程序。
 
+> 建议提供给自动化 agent 的提示词：
+```txt
+请参照 2.2 确认 WSL 里 Crazyradio 可见并完成权限配置（udev 规则或 chmod），
+同时确认没有其他程序占用无线电，完成后告诉我结果。
+```
+
 ### 2.3 软件环境
 
 地面站需要 `drone-navigation` conda 环境（含 cflib）和 PySide6：
@@ -95,6 +116,12 @@ conda activate drone-navigation
 pip install cflib PySide6 -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
+> 建议提供给自动化 agent 的提示词：
+```txt
+请参照 2.3 准备 drone-navigation 环境（cflib + PySide6），
+用 `python -c "import cflib, PySide6"` 验证后告诉我结果。
+```
+
 ### 2.4 中文字体（防止界面中文变方块）
 
 WSL 默认没有中文字体，界面中文会显示成方块。装一次：
@@ -104,6 +131,11 @@ sudo apt install -y fonts-noto-cjk
 ```
 
 启动地面站时终端会打印 `界面字体: Noto Sans CJK SC` 表示生效。
+
+> 建议提供给自动化 agent 的提示词：
+```txt
+请参照 2.4 安装中文字体，用 `fc-list | grep "Noto Sans CJK SC"` 验证后告诉我结果。
+```
 
 ### 2.5 中文输入法（聊天/输入框输中文）(BUG)
 
@@ -141,6 +173,12 @@ gsettings set org.freedesktop.ibus.general preload-engines "['libpinyin', 'xkb:u
 **中英文切换**：libpinyin 默认用 **左 Shift** 切换中/英，打开就是中文
 拼音模式。如果 Shift 没反应，右键 ibus 图标 → 首选项里检查切换键。
 
+> 建议提供给自动化 agent 的提示词：
+```txt
+请参照 2.5 配置 ibus + 智能拼音（apt 卡死就换清华镜像），
+配置后告诉我中英文切换键和验证方式。
+```
+
 ---
 
 ## 3. 配置 config.json
@@ -172,6 +210,12 @@ cp config.example.json config.json
 }
 ```
 
+> 建议提供给自动化 agent 的提示词：
+```txt
+请参照第 3 节生成并检查 config.json（radio_uri / camera_url / openclaw.token），
+确认各字段已填当前值；不要修改或提交 config.json。
+```
+
 ### 3.1 radio_uri（无线电身份）
 
 `radio://<无线电棒编号>/<信道>/<速率>/<地址>`。出厂默认是
@@ -189,12 +233,24 @@ python provision_drone.py --read-only
 > 设备后，WSL 里是 `usb://0`）。本机当前身份是
 > `radio://0/12/2M/8A3F5C2D9E`，默认配置已填好。
 
+> 建议提供给自动化 agent 的提示词：
+```txt
+请参照 3.1 读取无人机 EEPROM 身份并与 config.json 的 radio_uri 核对，
+一致就通过；不一致先告诉我怎么改，等我确认。
+```
+
 ### 3.2 camera_url（ESP32 摄像头）
 
 摄像头 IP 每次连接热点可能变化。在 Windows 的热点管理页面找到名为
 `espressif` 的设备，IP 例如 `10.219.80.107`，填到 `camera_url`。
 摄像头连的是 2.4GHz 热点（手机热点名字如 `lclMagic6`）。IP 变了在 GUI
 的视频地址框直接改，点"连接"即可。
+
+> 建议提供给自动化 agent 的提示词：
+```txt
+请参照 3.2 找到 ESP32 摄像头的 IP 并核对 config.json 的 camera_url，
+用 curl 验证视频流可达后告诉我结果。
+```
 
 ---
 
@@ -207,6 +263,12 @@ bash run_gui.sh          # 会自动启动 ibus 输入法并打开窗口
 ```
 
 或直接 `python main.py`（需已配置好输入法环境变量）。
+
+> 建议提供给自动化 agent 的提示词：
+```txt
+请参照第 4 节启动地面站 GUI（确认无线电已 attach、config.json 已配置），
+告诉我窗口是否正常打开、聊天面板是否在线；报 libxcb 错误按第 7 节处理。
+```
 
 ### 4.1 界面布局
 
@@ -244,6 +306,12 @@ bash run_gui.sh          # 会自动启动 ibus 输入法并打开窗口
 - **停止 / 急停（E-STOP）**：立即切断电机——**空中会直接掉下来**，
   优先用降落。急停走高优先级通道，即使正在执行长移动也会立即生效
 
+> 建议提供给自动化 agent 的提示词：
+```txt
+请按 4.1–4.3 给我讲解界面布局、按键功能和按钮含义，
+重点说明停止/急停与降落的区别。
+```
+
 ### 4.4 旋翼慢速测试（起飞前必做）
 
 每次飞行前检查桨叶和电机。GUI 里对 OpenClaw 说"逐个慢速转四个旋翼
@@ -255,6 +323,12 @@ python cli.py spin-test --power 4000 --duration 2
 
 无人机会按 m1 → m2 → m3 → m4 逐个慢转（约 6% 功率、每个 2 秒）。
 测试时放平整桌面、装好桨叶，别拿在手里；随时可按 X 停。
+
+> 建议提供给自动化 agent 的提示词：
+```txt
+请按 4.4 执行旋翼慢速测试（确认无人机放平、无线电无其他程序占用），
+正常输出 spin_test done；异常按第 7 节排查，不要起飞。
+```
 
 ---
 
@@ -286,6 +360,12 @@ setsid nohup openclaw gateway --port 18789 > ~/openclaw.log 2>&1 < /dev/null &
 
 验证：`curl -s http://127.0.0.1:18789/health` 应返回 `{"ok":true,"status":"live"}`。
 
+> 建议提供给自动化 agent 的提示词：
+```txt
+请按 5.1 开启 gateway 聊天端点并重启 gateway，
+用 `curl -s http://127.0.0.1:18789/health` 验证后告诉我结果。
+```
+
 ### 5.2 配置 token 与对话
 
 把 gateway token（`~/.openclaw/openclaw.json` 里 `gateway.auth.token`）填到
@@ -303,6 +383,12 @@ setsid nohup openclaw gateway --port 18789 > ~/openclaw.log 2>&1 < /dev/null &
 
 > OpenClaw 的 main agent 首次使用会做初始化对话（可能问你要名字），
 > 先在聊天面板里跟它聊完，之后就能正常指挥。
+
+> 建议提供给自动化 agent 的提示词：
+```txt
+请按 5.2 把 gateway token 填到 config.json 的 openclaw.token，
+启动 GUI 确认聊天面板“OpenClaw: 在线”，并向它发“检查无人机状态，能不能起飞”验证。
+```
 
 ### 5.3 无界面模式（脚本/自动化）
 
@@ -326,6 +412,12 @@ curl -s -X POST http://127.0.0.1:18790/command \
 
 可用 action：`takeoff` `land` `hover` `stop` `estop` `move` `spin_test`。
 
+> 建议提供给自动化 agent 的提示词：
+```txt
+请按 5.3 和 OPENCLAW.md 验证地面站接口（status / serve / POST command 格式），
+没有我的允许不要真的执行 takeoff。
+```
+
 ---
 
 ## 6. 安全规则（必读）
@@ -338,6 +430,11 @@ curl -s -X POST http://127.0.0.1:18790/command \
 6. LOCKED 状态必须断电重启解锁
 7. 一个时刻只有一个程序占用无线电
 8. 空中急停是坠机式急停，仅紧急情况使用
+
+> 建议提供给自动化 agent 的提示词：
+```txt
+请熟记第 6 节的安全规则，并在后续所有操作中遵守；起飞前先复述确认。
+```
 
 ---
 
@@ -362,6 +459,12 @@ curl -s -X POST http://127.0.0.1:18790/command \
 | apt 下载卡死 | 换清华镜像（见 2.5） |
 | `motorPowerSet` 参数不存在 | 删除 `groundstation/cache/` 后重试 |
 
+> 建议提供给自动化 agent 的提示词：
+```txt
+请把第 7 节的故障排查表作为排障手册，遇到问题时先对照定位，
+给出最小改动方案，不要擅自改配置。
+```
+
 ---
 
 ## 8. 目录结构
@@ -382,4 +485,10 @@ groundstation/
     ├── openclaw_client.py   # OpenClaw 聊天客户端（SSE）
     ├── video.py             # ESP32 MJPEG 拉流
     └── ui/                  # PySide6 界面
+```
+
+> 建议提供给自动化 agent 的提示词：
+```txt
+请按第 8 节给我说明 groundstation 各文件/模块的职责，
+并标注哪些可改、哪些是运行产物或含敏感信息（如 config.json）。
 ```

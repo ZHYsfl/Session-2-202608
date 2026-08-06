@@ -129,7 +129,7 @@ class ChatPanel(QWidget):
                 self._view.insertPlainText(ev.get("text", ""))
             elif t == "tool":
                 self._view.appendPlainText(
-                    f"\n  [工具调用] {ev.get('name')} args={ev.get('args', '')}"
+                    f"\n  [工具执行] {ev.get('name')} args={ev.get('args', '')}"
                 )
             elif t == "error":
                 self._view.appendPlainText(f"\n[错误] {ev.get('text', '')}")
