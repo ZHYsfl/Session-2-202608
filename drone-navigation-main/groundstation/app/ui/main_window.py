@@ -1,7 +1,7 @@
 """Main QT window: video, telemetry, attitude, and flight controls."""
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap, QTransform
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from app.ui.chat_panel import ChatPanel
 from app.ui.attitude_widget import AttitudeWidget
 from app.ui.trajectory_widget import TrajectoryWidget
+from app.video import VideoDecoder
 
 MOVE_XY = 0.3      # m/s, horizontal velocity per key/button
 MOVE_Z = 0.2       # m/s, vertical velocity
@@ -53,6 +54,15 @@ class MainWindow(QMainWindow):
         self._move_timer = QTimer(self)
         self._move_timer.setInterval(150)
         self._move_timer.timeout.connect(self._apply_input)
+
+        # Video is decoded/scaled on a background thread; the main thread
+        # only blits the latest QImage so the UI never blocks on JPEG work.
+        self._decoder = VideoDecoder(self._video)
+        self._decoder.start()
+        self._video_timer = QTimer(self)
+        self._video_timer.setInterval(33)  # ~30 fps display ceiling
+        self._video_timer.timeout.connect(self._update_video)
+        self._video_timer.start()
 
     # ------------------------------------------------------------------ #
     # UI construction
@@ -117,6 +127,9 @@ class MainWindow(QMainWindow):
 
         self._chk_flip = QCheckBox("画面翻转 180°")
         self._chk_flip.setFocusPolicy(Qt.NoFocus)
+        self._chk_flip.stateChanged.connect(
+            lambda state: self._decoder.set_flip(state == Qt.Checked)
+        )
         v.addWidget(self._chk_flip)
         return box
 
@@ -425,23 +438,13 @@ class MainWindow(QMainWindow):
         for line in self._ctrl.drain_log():
             self._log(line)
 
-        self._update_video()
-
     def _update_video(self):
-        frame = self._video.latest()
-        if not frame:
+        # Keep the decoder's target in sync with the actual label size.
+        self._decoder.set_target_size(self._lbl_video.size())
+        img = self._decoder.latest_image()
+        if img is None:
             return
-        pm = QPixmap()
-        if pm.loadFromData(frame, "JPG"):
-            if self._chk_flip.isChecked():
-                pm = pm.transformed(QTransform().rotate(180))
-            self._lbl_video.setPixmap(
-                pm.scaled(
-                    self._lbl_video.size(),
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation,
-                )
-            )
+        self._lbl_video.setPixmap(QPixmap.fromImage(img))
 
     def _on_reconnect_video(self):
         url = self._edit_url.text().strip()
@@ -449,6 +452,7 @@ class MainWindow(QMainWindow):
             return
         self._video.set_url(url)
         self._video.restart()
+        self._decoder.reset()
         self._log(f"[GUI] 视频地址已切换: {url}")
 
     def _log(self, msg):
@@ -458,9 +462,11 @@ class MainWindow(QMainWindow):
 
     def shutdown(self):
         self._timer.stop()
+        self._video_timer.stop()
         self._move_timer.stop()
         if self._chat_panel is not None:
             self._chat_panel.shutdown()
+        self._decoder.stop()
         self._ctrl.request("hover")
 
     def closeEvent(self, event):

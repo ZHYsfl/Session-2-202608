@@ -5,10 +5,37 @@ description: 通过 Crazyflie QT 地面站控制无人机：状态检查、起�
 
 # Crazyflie 地面站操作技能
 
-本技能教智能体如何通过地面站安全地操作 Crazyflie 无人机。地面站已把
-无人机操作暴露为标准 function tools（`get_status` / `takeoff` / `land` /
-`hover` / `stop` / `estop` / `move` / `spin_test`），**优先直接调用工具**，
-不要自己拼 `curl`。工具 schema 随聊天请求自动提供，这里只记要点。
+本技能教智能体如何通过地面站安全地操作 Crazyflie 无人机。地面站提供
+两种等价的操作方式，选择当前会话可用的那种：
+
+- **客户端工具**（地面站 GUI 聊天面板）：工具 `get_status` / `takeoff` /
+  `land` / `hover` / `stop` / `estop` / `move` / `spin_test` 随请求自动提供，
+  直接调用即可，不要拼 `curl`。
+- **HTTP 接口**（微信等无客户端工具的渠道）：用 `curl` 调用本机地面站
+  服务 `http://127.0.0.1:18790`，见下节。
+
+## HTTP 接口（微信/无工具渠道）
+
+地面站命令服务监听 `127.0.0.1:18790`。查看状态：
+
+```bash
+curl -s http://127.0.0.1:18790/status
+```
+
+发送命令（`action` 必填）：
+
+```bash
+curl -s -X POST http://127.0.0.1:18790/command -H 'Content-Type: application/json' -d '{"action":"takeoff","height":0.3}'
+curl -s -X POST http://127.0.0.1:18790/command -H 'Content-Type: application/json' -d '{"action":"move","vx":0.3,"duration":1.5}'
+curl -s -X POST http://127.0.0.1:18790/command -H 'Content-Type: application/json' -d '{"action":"land"}'
+curl -s -X POST http://127.0.0.1:18790/command -H 'Content-Type: application/json' -d '{"action":"hover"}'
+curl -s -X POST http://127.0.0.1:18790/command -H 'Content-Type: application/json' -d '{"action":"stop"}'
+curl -s -X POST http://127.0.0.1:18790/command -H 'Content-Type: application/json' -d '{"action":"estop"}'
+curl -s -X POST http://127.0.0.1:18790/command -H 'Content-Type: application/json' -d '{"action":"spin_test","power":4000,"duration":2}'
+```
+
+若 `127.0.0.1:18790` 不可达（连接拒绝），说明地面站服务没在运行：请用户
+启动 `python cli.py serve` 或打开地面站 GUI，不要继续尝试飞行。
 
 ## 工具要点
 
@@ -36,4 +63,5 @@ description: 通过 Crazyflie QT 地面站控制无人机：状态检查、起�
 
 - 回答用**纯文本**，禁止 Markdown（不要 `**`、`` ` ``、表格、列表符号）。
 - 中文优先，简短直接：先给结论，再给必要的数据（电压、高度、位置）。
-- 工具执行结果会以 JSON 返回；只向用户展示可读的摘要，不要原样粘贴大段 JSON。
+- 接口返回 JSON；只向用户展示可读的摘要（电压、高度、位置、是否成功），
+  不要原样粘贴大段 JSON。

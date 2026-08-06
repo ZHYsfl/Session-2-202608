@@ -77,16 +77,16 @@ class TrajectoryWidget(QWidget):
 
         # home cross (green)
         p.setPen(QPen(QColor(46, 204, 113), 2))
-        hx, hy = to_screen(*self._home)
-        p.drawLine(QPointF(hx - 8, hy), QPointF(hx + 8, hy))
-        p.drawLine(QPointF(hx, hy - 8), QPointF(hx, hy + 8))
+        hp = to_screen(*self._home)
+        p.drawLine(QPointF(hp.x() - 8, hp.y()), QPointF(hp.x() + 8, hp.y()))
+        p.drawLine(QPointF(hp.x(), hp.y() - 8), QPointF(hp.x(), hp.y() + 8))
 
         # current position: aircraft triangle oriented by yaw
         if self._points:
             x, y = self._points[-1]
-            sx, sy = to_screen(x, y)
+            sp = to_screen(x, y)
             p.save()
-            p.translate(sx, sy)
+            p.translate(sp.x(), sp.y())
             p.rotate(-self._yaw)
             p.setPen(QPen(QColor(255, 255, 255), 1))
             p.setBrush(QColor(46, 204, 113))
