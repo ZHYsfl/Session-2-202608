@@ -980,15 +980,195 @@ def serialize_state(obs: dict) -> str:
 
 ---
 
-## 10. 联调顺序
+## 10. 各侧入口与对外接口
+
+§3-§5 定义了仿真侧的 WebSocket 接口（仿真侧 <-> 任意 client）。本节定义其余各侧的**入口命令**和**对外接口**，让各方知道怎么被调用、产出什么。
+
+### 10.1 仿真侧（Group A）
+
+| 项 | 说明 |
+|---|---|
+| **启动** | Webots 打开世界文件，Controller 进程自动启动 WebSocket server |
+| **对外接口** | §3-§5 定义的 WebSocket API（`ws://127.0.0.1:8765`） |
+| **输入** | WebSocket 消息（reset/action） |
+| **输出** | WebSocket 消息（hello/obs/bye/error） |
+| **无文件输出** | 仿真侧不写文件，所有数据通过 WebSocket 实时返回 |
+
+### 10.2 数据侧（离线采集）
+
+| 项 | 说明 |
+|---|---|
+| **入口** | `python -m data.collect --n-scenes 100 --sim-url ws://127.0.0.1:8765 --output data/sft_conversations.jsonl` |
+| **输入** | 场景数量、SOTA LLM 配置（API key/model）、仿真 server URL |
+| **对外接口** | **产出文件 `sft_conversations.jsonl`**（格式见 §8.5）。文件即接口--训练侧读这个文件做 SFT。 |
+| **依赖** | 仿真侧必须已启动；SOTA LLM API 可用 |
+
+> 文件路径：`src/data/collect.py`。CLI 参数：
+> ```
+> --n-scenes N        场景数量（默认 100）
+> --sim-url URL       仿真侧 WebSocket 地址（默认 ws://127.0.0.1:8765）
+> --output PATH       输出文件路径（默认 data/sft_conversations.jsonl）
+> --sota-model NAME   SOTA LLM 模型名（默认 claude-sonnet-4-20250514）
+> --seed-start N      起始 seed（默认 0，场景 seed = 0,1,...,N-1）
+> ```
+
+数据侧产出后，筛选由 `src/data/filter.py` 完成：
+```bash
+python -m data.filter --input data/sft_conversations.jsonl --output data/sft_dataset.jsonl
+```
+
+### 10.3 算法侧（在线推理）
+
+算法侧有两种被调用方式：
+
+**方式一：独立运行（联调/演示用）**
+
+```bash
+python -m agent.run_agent \
+    --sim-url ws://127.0.0.1:8765 \
+    --model-path Qwen/Qwen2.5-7B-Instruct \
+    --lora-path ./outputs/lora_weights \
+    --seeds 0-99 \
+    --output results/agent_episodes.jsonl
+```
+
+直接连接仿真，跑指定 seed 的场景，输出每 episode 结果。
+
+**方式二：被评测侧 import（评测用）**
+
+> 文件路径：`src/agent/run_agent.py`
+>
+> ```python
+> def run_episode(
+>     sim_url: str,
+>     seed: int,
+>     agent_config: dict,   # {"model": "...", "lora_path": "...", "api_base": "..."}
+> ) -> dict:
+>     """src/agent/run_agent.py :: 跑一个 episode，返回结果。
+>     
+>     返回:
+>         {
+>             "seed": int,
+>             "outcome": "success" | "collision" | "timeout",
+>             "steps": int,
+>             "final_dist": float,
+>             "path_length": float,
+>             "min_obstacle_dist": float,
+>         }
+>     """
+> ```
+
+评测侧 import 此函数，对每个测试 seed 调用一次，收集结果。
+
+> CLI 参数（方式一）：
+> ```
+> --sim-url URL        仿真侧 WebSocket 地址
+> --model-path PATH    模型路径
+> --lora-path PATH     LoRA 权重路径
+> --seeds A-B          seed 范围（如 0-99）
+> --output PATH        结果输出文件
+> ```
+
+**算法侧输出文件格式**（`results/agent_episodes.jsonl`）：
+
+```json
+{"seed": 0, "outcome": "success", "steps": 87, "final_dist": 0.12, "path_length": 11.3, "min_obstacle_dist": 0.15}
+{"seed": 1, "outcome": "collision", "steps": 23, "final_dist": 5.22, "path_length": 3.1, "min_obstacle_dist": -0.10}
+```
+
+### 10.4 评测侧（批量评测）
+
+| 项 | 说明 |
+|---|---|
+| **入口** | `python -m eval.run_eval --methods random,straight,pf,llm --seeds 100-119 --sim-url ws://127.0.0.1:8765 --output results/` |
+| **输入** | 方法列表、测试 seed 列表、仿真 server URL |
+| **对外接口** | **产出目录 `results/`**，含汇总指标 + 每 episode 详情 |
+| **对算法侧的调用** | 对 `llm` 方法，`from agent.run_agent import run_episode` 逐 seed 调用 |
+
+> 文件路径：`src/eval/run_eval.py`，依赖 `src/agent/run_agent.py::run_episode`（LLM 方法）、`src/eval/baselines.py`（基线方法）。
+>
+> ```python
+> def run_eval(
+>     methods: list[str],       # ["random", "straight", "pf", "llm"]
+>     seeds: list[int],         # [100, 101, ..., 119]
+>     sim_url: str,
+>     agent_config: dict | None,  # LLM 方法需要；基线不需要
+> ) -> dict:
+>     """src/eval/run_eval.py :: 跑所有方法 × 所有 seed，返回汇总指标。"""
+> ```
+
+**基线方法**（`src/eval/baselines.py`）：
+
+```python
+def random_policy(obs: dict) -> dict:
+    """随机动作。返回 {"action_id": random_int(0,9)}。"""
+
+def straight_policy(obs: dict) -> dict:
+    """直行朝目标。不避障。返回 {"action_id": ...}。"""
+
+def pf_policy(obs: dict) -> dict:
+    """3D 势场法。引力=目标，斥力=障碍。返回 {"action_id": ...}。"""
+```
+
+> 基线方法签名与数据侧的专家策略一致（`obs -> action`），但它们作为评测 client 连接仿真，不是离线采集。
+
+**评测侧输出文件格式**：
+
+`results/metrics.json`（汇总）：
+```json
+{
+  "llm": {"success_rate": 0.75, "collision_rate": 0.15, "timeout_rate": 0.10, "avg_steps": 95.3, "avg_path_efficiency": 1.42},
+  "pf":  {"success_rate": 0.60, "collision_rate": 0.25, "timeout_rate": 0.15, "avg_steps": 110.5, "avg_path_efficiency": 1.68},
+  "random": {"success_rate": 0.05, "collision_rate": 0.85, "timeout_rate": 0.10, "avg_steps": 150.0, "avg_path_efficiency": 5.0},
+  "straight": {"success_rate": 0.10, "collision_rate": 0.80, "timeout_rate": 0.10, "avg_steps": 50.0, "avg_path_efficiency": 1.0}
+}
+```
+
+`results/detail.jsonl`（每 episode 详情）：
+```json
+{"method": "llm", "seed": 100, "outcome": "success", "steps": 87, "path_length": 11.3, "min_obstacle_dist": 0.15}
+{"method": "llm", "seed": 101, "outcome": "collision", "steps": 23, "path_length": 3.1, "min_obstacle_dist": -0.10}
+{"method": "pf", "seed": 100, "outcome": "success", "steps": 120, "path_length": 14.5, "min_obstacle_dist": 0.12}
+```
+
+### 10.5 接口依赖关系总览
+
+```
+仿真侧 (WebSocket API)
+    ↑
+    ├── 数据侧 (CLI: python -m data.collect)
+    │       └──产出──> sft_conversations.jsonl ──> 筛选 ──> sft_dataset.jsonl ──> SFT 训练
+    │
+    ├── 算法侧 (CLI: python -m agent.run_agent)
+    │       └── import ──> run_episode() 函数
+    │                         ↑
+    │                         │
+    ├── 评测侧 (CLI: python -m eval.run_eval)
+    │       ├── import run_episode() ──> 调用算法侧跑 LLM 方法
+    │       ├── import baselines ──> 自己跑基线方法
+    │       └──产出──> results/metrics.json + results/detail.jsonl
+    │
+    └── (各侧都通过 WebSocket 连接仿真侧)
+```
+
+**共享模块**（多方 import，不是独立服务）：
+
+| 模块 | 路径 | 谁用 |
+|---|---|---|
+| `serialize_state()` | `src/agent/serialize.py` | 算法侧、数据侧、评测侧（LLM 方法） |
+| `protocol` 工具 | `src/agent/protocol.py` | 算法侧、数据侧、评测侧 |
+| `run_episode()` | `src/agent/run_agent.py` | 评测侧 import |
+| `baselines` | `src/eval/baselines.py` | 评测侧自用 |
+
+## 11. 联调顺序
 
 1. **Group A 先交**：Webots 世界 + 传感器 + WebSocket server，能跑通 `hello -> reset -> obs -> action -> obs` 单 episode
 2. **Group B/C 并行**：自写 echo server 桩（收到 action 回伪造 obs），先把 LLM 推理 + 动作解析跑通
-3. **数据侧并行**：专家策略 client 连真实仿真，先跑通 10 个 episode 采集原始轨迹；同时对接 SOTA LLM API 跑通加工流程
+3. **数据侧并行**：SOTA LLM + Hermes Agent 连真实仿真，先跑通 5 个 episode 采集对话；确认 sft_conversations.jsonl 格式正确
 4. **Group D 并行**：自写随机 client 桩，先把评测框架搭好
 5. 联调：hello 校验 -> 单 episode 全流程 -> 多 episode -> 批量评测
 6. Group D 接入基线方法
 
-## 11. 变更管理
+## 12. 变更管理
 
 任何字段、常量、流程的改动：改本文档 -> 升 `protocol_version` 次版本号 -> 群里通知 -> 各组同步改代码。主版本号变更表示不兼容改动，client/server 必须拒绝连接。
