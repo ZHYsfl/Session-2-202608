@@ -164,4 +164,10 @@ cython_debug/
 node_modules/
 dist/
 
+# Day-1 Crazyflie runtime artifacts (regenerable)
+src/day1_crazyflie/cache/
+src/day1_crazyflie/*.csv
+src/day1_crazyflie/*.png
+src/day1_crazyflie/.venv/
+
 

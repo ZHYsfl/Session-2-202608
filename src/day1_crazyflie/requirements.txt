@@ -1,0 +1,8 @@
+# Day-1 Crazyflie 依赖
+# 版本与 introduction.md 第 4 节「环境版本基线(2026-08-04)」对齐。
+# 使用 Python 3.12 的 venv 隔离环境安装：
+#   py -3.12 -m venv .venv
+#   .venv\Scripts\python -m pip install -r requirements.txt
+cflib==0.1.32
+cfclient==2026.4
+matplotlib>=3.8
