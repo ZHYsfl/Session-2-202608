@@ -12,6 +12,7 @@ def main():
         sys.exit(1)
 
     from app.command_server import CommandServer
+    from app.agent_tools import TOOLS, build_system_prompt, make_executor
     from app.config import load_config
     from app.controller import CrazyflieController
     from app.openclaw_client import OpenClawChat
@@ -56,12 +57,22 @@ def main():
     oc_cfg = cfg.get("openclaw", {}) or {}
     chat = None
     if oc_cfg.get("base_url"):
+        executor = make_executor(
+            controller,
+            max_velocity_xy=cfg.get("max_velocity_xy", 0.5),
+            max_velocity_z=cfg.get("max_velocity_z", 0.5),
+            max_yawrate=cfg.get("max_yawrate", 120),
+        )
         chat = OpenClawChat(
             base_url=oc_cfg.get("base_url", "http://127.0.0.1:18789"),
             token=oc_cfg.get("token", ""),
             model=oc_cfg.get("model", "openclaw/default"),
             user=oc_cfg.get("user", "groundstation-gui"),
+            tools=TOOLS,
+            tool_executor=executor,
         )
+        if not oc_cfg.get("system_prompt"):
+            cfg["openclaw"]["system_prompt"] = build_system_prompt(cfg)
 
     win = MainWindow(controller, video, cfg, chat=chat)
     win.showMaximized()
