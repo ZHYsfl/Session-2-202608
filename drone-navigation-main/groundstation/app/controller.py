@@ -44,6 +44,9 @@ TAKEOFF_TIME = 3.0         # s, ramp 0 -> target height
 LAND_TIME = 3.0            # s, ramp target -> 0
 SETTLE_TIME = 2.0          # s, z=0 hold before cutting motors (avoid LOCKED)
 MOVE_WATCHDOG_S = 0.5      # s, stale move command -> hover
+LINK_WATCHDOG_S = 3.5      # s, no telemetry packet -> treat link as dead
+LINK_STALE_BREAK_S = 1.0   # s, long loops exit early once the link is stale
+CONNECT_TIMEOUT_S = 15.0   # s, abandon a stuck radio connection attempt
 
 BATTERY_TAKEOFF_MIN_V = 3.7
 BATTERY_WARN_V = 3.8
@@ -179,19 +182,7 @@ class CrazyflieController:
         cflib.crtp.init_drivers()
         while not self._stop.is_set():
             try:
-                with SyncCrazyflie(
-                    self.uri, cf=Crazyflie(rw_cache=self._cache_dir)
-                ) as scf:
-                    self._scf = scf
-                    self._set("connected", True)
-                    self._set("last_error", None)
-                    self._log(f"[GS] Connected: {self.uri}")
-                    self._setup_logging(scf.cf)
-                    time.sleep(0.5)
-                    self._reset_motor_overrides(scf.cf)
-                    while not self._stop.is_set():
-                        self._pump(scf.cf)
-                        time.sleep(0.005)
+                self._connect_once()
             except Exception as exc:
                 self._scf = None
                 self._set("connected", False)
@@ -201,6 +192,85 @@ class CrazyflieController:
                 self._log(f"[GS] Link error: {exc}")
             if not self._stop.is_set():
                 time.sleep(2.0)
+
+    def _connect_once(self):
+        """One connection attempt with a hard timeout *for the connect
+        phase only*.  Once the link is established the worker stays inside
+        the attempt thread until the link drops or the app stops; the
+        watchdog (``_link_stale``) is what ends a dead link.
+
+        The timeout protects against a radio driver stuck in a low-level
+        retry loop during ``open_link`` — it must never fire on a healthy,
+        long-lived connection."""
+        result = {}
+        connected = threading.Event()
+
+        def _attempt():
+            try:
+                with SyncCrazyflie(
+                    self.uri, cf=Crazyflie(rw_cache=self._cache_dir)
+                ) as scf:
+                    connected.set()
+                    self._scf = scf
+                    self._set("connected", True)
+                    self._set("last_error", None)
+                    self._log(f"[GS] Connected: {self.uri}")
+                    self._setup_logging(scf.cf)
+                    # Detect link loss even when cflib stays silent: a dead
+                    # drone stops producing telemetry long before any
+                    # higher-level driver would raise.
+                    scf.cf.connection_lost.add_callback(
+                        lambda uri, msg: self._on_link_lost(msg)
+                    )
+                    scf.cf.disconnected.add_callback(
+                        lambda uri: self._on_link_lost("disconnected")
+                    )
+                    time.sleep(0.5)
+                    self._reset_motor_overrides(scf.cf)
+                    while not self._stop.is_set():
+                        if self._link_stale():
+                            raise RuntimeError(
+                                f"link lost: no telemetry for {LINK_WATCHDOG_S}s"
+                            )
+                        self._pump(scf.cf)
+                        time.sleep(0.005)
+            except Exception as exc:
+                result["exc"] = exc
+
+        thread = threading.Thread(target=_attempt, daemon=True)
+        thread.start()
+        # Wait only for the *connect* phase: the link is up as soon as the
+        # event fires, after which the thread runs for the connection's
+        # lifetime and we must not time it out.
+        if not connected.wait(timeout=CONNECT_TIMEOUT_S):
+            # Connection never completed -> radio driver likely stuck.
+            # Join briefly (best effort) and let the outer loop retry.
+            thread.join(timeout=2.0)
+            self._scf = None
+            self._set("connected", False)
+            self._set("flying", False)
+            self._set("armed", False)
+            self._set("last_error", "connect timeout (radio driver stuck)")
+            self._log("[GS] Connect attempt timed out, will retry")
+            return
+        # Link established: block until the attempt thread ends (link lost
+        # or stop requested), then propagate any link error.
+        thread.join()
+        if "exc" in result and not self._stop.is_set():
+            raise result["exc"]
+
+    def _on_link_lost(self, msg):
+        """cflib reported the link died (or telemetry went stale)."""
+        self._set("connected", False)
+        self._set("flying", False)
+        self._set("armed", False)
+        self._set("last_error", f"link lost: {msg}")
+        self._log(f"[GS] Link lost: {msg} (reconnecting...)")
+
+    def _link_stale(self):
+        with self._lock:
+            last = self._snapshot.get("last_update") or 0.0
+        return bool(last) and (time.time() - last) > LINK_WATCHDOG_S
 
     def _pump(self, cf):
         # 1) Urgent commands first: an emergency cut must win immediately.
@@ -342,6 +412,7 @@ class CrazyflieController:
             time.monotonic() < deadline
             and not self._stop.is_set()
             and not self._emergency_pending()
+            and not self._link_stale()
         ):
             if vz:
                 z = self._z_hold + vz * STEP
@@ -389,6 +460,7 @@ class CrazyflieController:
                     time.monotonic() < deadline
                     and not self._stop.is_set()
                     and not self._emergency_pending()
+                    and not self._link_stale()
                 ):
                     time.sleep(0.05)
                 try:
@@ -417,7 +489,11 @@ class CrazyflieController:
     def _ramp(self, cf, z0, z1, duration):
         steps = int(duration * RATE)
         for i in range(1, steps + 1):
-            if self._stop.is_set() or self._emergency_pending():
+            if (
+                self._stop.is_set()
+                or self._emergency_pending()
+                or self._link_stale()
+            ):
                 break
             z = z0 + (z1 - z0) * i / steps
             self._z_hold = z
@@ -430,6 +506,7 @@ class CrazyflieController:
             time.monotonic() < deadline
             and not self._stop.is_set()
             and not self._emergency_pending()
+            and not self._link_stale()
         ):
             self._z_hold = 0.0
             cf.commander.send_hover_setpoint(0, 0, 0, 0)
