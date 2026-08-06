@@ -149,7 +149,7 @@ git clone https://github.com/kandeng/drone-navigation.git
 cd drone-navigation/client/
 
 # 2. Fetch latest code + merge into your local branch
-cd ~/drone-navigation
+cd ~/drone-navigation-main
 git pull origin main
 
 # 3. Install dependencies and build the production bundle
@@ -161,18 +161,18 @@ npm install
 vim config.json
 
 # 5. Populate the video clips for splashing.
-cp ~/drone-navigation/client/assets/media/*.mp4 ~/drone-navigation/client/public/splash/.
-rm ~/drone-navigation/client/public/splash/drone_earth*.mp4
+cp ~/drone-navigation-main/client/assets/media/*.mp4 ~/drone-navigation-main/client/public/splash/.
+rm ~/drone-navigation-main/client/public/splash/drone_earth*.mp4
 
 # 6. Re-build after configuration changes
 npm run build
 
 # 7. Create the web root directory and copy the built assets
 sudo mkdir -p /var/www/drone-navigation/client/dist
-sudo cp -r ~/drone-navigation/client/dist/* /var/www/drone-navigation/client/dist/
+sudo cp -r ~/drone-navigation-main/client/dist/* /var/www/drone-navigation/client/dist/
 
 # 8. Deploy the runtime config.json (this file is gitignored and must be copied manually)
-sudo cp ~/drone-navigation/client/config.json /var/www/drone-navigation/client/dist/config.json
+sudo cp ~/drone-navigation-main/client/config.json /var/www/drone-navigation/client/dist/config.json
 ```
 
 After copying the files, configure Caddy (see the next section) and reload the service:
@@ -506,7 +506,7 @@ openssl rand -hex 24
 
 # 2. Copy the script somewhere the postgres user can read it
 #    (postgres cannot read /root on the ECS)
-sudo cp ~/drone-navigation/server/migrations/001_init_auth_schema.sql /tmp/
+sudo cp ~/drone-navigation-main/server/migrations/001_init_auth_schema.sql /tmp/
 sudo chmod 644 /tmp/001_init_auth_schema.sql
 
 # 3. Run it (safe to re-run; ON_ERROR_STOP aborts on the first failure)
@@ -557,7 +557,7 @@ cd server && ~/miniconda3/envs/drone-navigation/bin/python -m migrations.generat
 ### 1. Installation
 
 ```bash
-cd ~/drone-navigation/server
+cd ~/drone-navigation-main/server
 
 # 1. Create a conda environment (system Python 3.12 works)
 conda create -n drone-navigation python=3.12 -y
@@ -596,7 +596,7 @@ nano config.json
 
 ```bash
 # Development (auto-reload) in CLI terminal
-cd ~/drone-navigation/server
+cd ~/drone-navigation-main/server
 conda activate drone-navigation
 uvicorn app.main:app --reload --port 8000
 ```
@@ -774,12 +774,12 @@ Synapse coexists with MediaMTX without port conflicts: 8008 binds only to the Ta
 1. Add the `matrix_account` table (idempotent migration):
 
 ```bash
-sudo cp ~/drone-navigation/server/migrations/002_matrix_account.sql /tmp/
+sudo cp ~/drone-navigation-main/server/migrations/002_matrix_account.sql /tmp/
 sudo chmod 644 /tmp/002_matrix_account.sql
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d drone_navigation -f /tmp/002_matrix_account.sql
 ```
 
-2. Edit `~/drone-navigation/server/config.json` — point the backend at Synapse over the mesh:
+2. Edit `~/drone-navigation-main/server/config.json` — point the backend at Synapse over the mesh:
 
 ```json
 "synapse": {
@@ -960,13 +960,13 @@ Both default to PRODUCTION — no environment variables are needed to serve the 
 &nbsp;
 ## 5.1. Prerequisites (Ubuntu desktop)
 
-1. Clone the repo to `~/drone-navigation` and create the shared conda environment:
+1. Clone the repo to `~/drone-navigation-main` and create the shared conda environment:
 
 ```bash
 conda create -n drone-navigation python=3.12 -y
 conda activate drone-navigation
-pip install -r ~/drone-navigation/extension/simple_webcam/requirements.txt
-pip install -r ~/drone-navigation/extension/crazyflie_bridge/requirements.txt
+pip install -r ~/drone-navigation-main/extension/simple_webcam/requirements.txt
+pip install -r ~/drone-navigation-main/extension/crazyflie_bridge/requirements.txt
 ```
 
 2. (Drone only) one-time udev rules so userland can reach the Crazyradio PA, and the drone itself over USB (used when changing its EEPROM identity):
@@ -985,7 +985,7 @@ lsusb | grep 1915        # Nordic Semiconductor — the Crazyradio is visible
 ## 5.2. simple_webcam (webcam -> production MediaMTX)
 
 ```bash
-cd ~/drone-navigation/extension/simple_webcam
+cd ~/drone-navigation-main/extension/simple_webcam
 conda activate drone-navigation
 python simple_webcam.py            # publishes stream id 'ubuntu-webcam' to PRODUCTION
 ```
@@ -1008,7 +1008,7 @@ systemd variant: [`deployment/local-systemd/drone-webcam.service`](./local-syste
 Plug in the Crazyradio PA and power the drone, then launch all four processes with one script (it self-activates the `drone-navigation` conda env):
 
 ```bash
-cd ~/drone-navigation/extension/crazyflie_bridge
+cd ~/drone-navigation-main/extension/crazyflie_bridge
 CRAZYFLIE_IP="192.168.0.110" RADIO_URL="radio://0/80/2M/E7E7E7E7E7" ./start_bridge.sh
 #    = video_stream_proxy.py  (re-broadcasts http://$CRAZYFLIE_IP/stream on :8082)
 #    + motion_control_ws.py   (ws://:8765; set RADIO_URL env var, or pass

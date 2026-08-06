@@ -64,7 +64,7 @@ sudo apt install -y nodejs
 
 # Clone into the WSL HOME — never under /mnt/c
 # (npm install on the Windows filesystem is 10-50x slower)
-git clone https://github.com/kandeng/drone-navigation.git ~/drone-navigation
+git clone https://github.com/kandeng/drone-navigation.git ~/drone-navigation-main
 ```
 
 Checkpoint: `node -v`, `npm -v`, `conda --version`, `git --version` all print versions.
@@ -72,7 +72,7 @@ Checkpoint: `node -v`, `npm -v`, `conda --version`, `git --version` all print ve
 ## Section 2. Client (Vue 3 + Vite)
 
 ```bash
-cd ~/drone-navigation/client
+cd ~/drone-navigation-main/client
 npm install
 cp config.example.json config.json   # fill in googleApiKey, cesiumIonToken, openclaw.token
 npm run dev
@@ -101,15 +101,15 @@ printf "port = 5433\nunix_socket_directories = '$HOME/pgdata'\n" >> ~/pgdata/pos
 # Populate the schema (idempotent; run 002 after 001)
 psql -h 127.0.0.1 -p 5433 -U $USER -v ON_ERROR_STOP=1 \
      -v app_password='local-dev-drone-api' \
-     -f ~/drone-navigation/server/migrations/001_init_auth_schema.sql
+     -f ~/drone-navigation-main/server/migrations/001_init_auth_schema.sql
 psql -h 127.0.0.1 -p 5433 -U $USER -d drone_navigation \
-     -v ON_ERROR_STOP=1 -f ~/drone-navigation/server/migrations/002_matrix_account.sql
+     -v ON_ERROR_STOP=1 -f ~/drone-navigation-main/server/migrations/002_matrix_account.sql
 ```
 
 ## Section 4. FastAPI backend (auth + settings + Matrix brokering)
 
 ```bash
-cd ~/drone-navigation/server
+cd ~/drone-navigation-main/server
 conda create -n drone-navigation python=3.12 -y
 conda activate drone-navigation
 pip install -r requirements.txt
@@ -245,7 +245,7 @@ Find the drone's camera IP: browse `http://192.168.0.x` candidates from a Window
 **Changing the drone's EEPROM identity** (only needed when several drones share one room — same channel + same address = cross-control): connect the drone over its USB cable, attach it to WSL with usbipd the same way as the radio, then run the provisioning script — it writes the new radio channel/address into the drone's EEPROM, then verifies it over the radio after a power-cycle:
 
 ```bash
-cd ~/drone-navigation/extension/crazyflie_bridge
+cd ~/drone-navigation-main/extension/crazyflie_bridge
 python provision_drone.py --channel 14 --address E7E7E7E707
 # -> then connect with: ./start_bridge.sh --cf-uri radio://0/14/2M/E7E7E7E707
 ```
@@ -255,7 +255,7 @@ Give each drone a distinct channel, ≥2 MHz apart at 2M datarate (e.g. channels
 Start the whole bridge with one script (it self-activates the `drone-navigation` conda env):
 
 ```bash
-cd ~/drone-navigation/extension/crazyflie_bridge
+cd ~/drone-navigation-main/extension/crazyflie_bridge
 CRAZYFLIE_IP="192.168.0.110" RADIO_URL="radio://0/80/2M/E7E7E7E7E7" \
 TELEMETRY_SERVER="ws://127.0.0.1:8000/api/drone/telemetry/publish" \
 MEDIAMTX_URL="http://127.0.0.1:8889" MEDIAMTX_API="http://127.0.0.1:9997" \
@@ -282,11 +282,11 @@ Start order each session (one WSL terminal tab each, except the webcam in Window
 
 ```bash
 /usr/lib/postgresql/$(ls /usr/lib/postgresql)/bin/pg_ctl -D ~/pgdata -l ~/pgdata.log start
-cd ~/drone-navigation/server && conda activate drone-navigation && uvicorn app.main:app --reload --port 8000
+cd ~/drone-navigation-main/server && conda activate drone-navigation && uvicorn app.main:app --reload --port 8000
 nohup ~/synapse-venv/bin/python -m synapse.app.homeserver -c ~/synapse-data/homeserver.yaml &
 openclaw gateway --port 18789
 ~/mediamtx_v1.9.0/mediamtx
-cd ~/drone-navigation/client && npm run dev
+cd ~/drone-navigation-main/client && npm run dev
 # Windows PowerShell: cd $HOME\simple_webcam; $env:MEDIAMTX_URL=...; py simple_webcam.py
 # Real drone: Section 9 (usbipd attach first)
 ```

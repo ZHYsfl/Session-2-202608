@@ -10,7 +10,7 @@
 在 WSL 终端（`conda activate drone-navigation` 后）执行：
 
 ```bash
-cd ~/drone-navigation/groundstation
+cd ~/drone-navigation-main/groundstation
 
 python cli.py status                    # 查看连接、电池、锁定、位置
 python cli.py takeoff --height 0.4      # 起飞并悬停

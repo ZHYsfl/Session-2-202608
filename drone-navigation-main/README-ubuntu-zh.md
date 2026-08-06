@@ -45,7 +45,7 @@ bash Miniconda3-latest-Linux-x86_64.sh -b -p ~/miniconda3
 curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt install -y nodejs
 
-git clone https://github.com/kandeng/drone-navigation.git ~/drone-navigation
+git clone https://github.com/kandeng/drone-navigation.git ~/drone-navigation-main
 ```
 
 检查点：`node -v`、`npm -v`、`conda --version`、`git --version` 都能打印版本号。
@@ -53,7 +53,7 @@ git clone https://github.com/kandeng/drone-navigation.git ~/drone-navigation
 ## 第 2 节. 客户端（Vue 3 + Vite）
 
 ```bash
-cd ~/drone-navigation/client
+cd ~/drone-navigation-main/client
 npm install
 cp config.example.json config.json   # 填写 googleApiKey、cesiumIonToken、openclaw.token
 npm run dev                          # http://localhost:5173
@@ -81,15 +81,15 @@ printf "port = 5433\nunix_socket_directories = '$HOME/pgdata'\n" >> ~/pgdata/pos
 # 导入表结构（幂等；先执行 001 再执行 002）
 psql -h 127.0.0.1 -p 5433 -U $USER -v ON_ERROR_STOP=1 \
      -v app_password='local-dev-drone-api' \
-     -f ~/drone-navigation/server/migrations/001_init_auth_schema.sql
+     -f ~/drone-navigation-main/server/migrations/001_init_auth_schema.sql
 psql -h 127.0.0.1 -p 5433 -U $USER -d drone_navigation \
-     -v ON_ERROR_STOP=1 -f ~/drone-navigation/server/migrations/002_matrix_account.sql
+     -v ON_ERROR_STOP=1 -f ~/drone-navigation-main/server/migrations/002_matrix_account.sql
 ```
 
 ## 第 4 节. FastAPI 后端（认证 + 设置 + Matrix 中转）
 
 ```bash
-cd ~/drone-navigation/server
+cd ~/drone-navigation-main/server
 conda create -n drone-navigation python=3.12 -y
 conda activate drone-navigation
 pip install -r requirements.txt
@@ -162,7 +162,7 @@ tar -xzf mediamtx_v1.9.0_linux_amd64.tar.gz
 **摄像头推流程序**（另开一个终端）：
 
 ```bash
-cd ~/drone-navigation/extension/simple_webcam
+cd ~/drone-navigation-main/extension/simple_webcam
 conda activate drone-navigation
 MEDIAMTX_URL=http://127.0.0.1:8889 MEDIAMTX_API=http://127.0.0.1:9997 \
   LIVESTREAM_ID=crazyflie-drone python simple_webcam.py   # WHIP 推流 'crazyflie-drone'
@@ -208,7 +208,7 @@ lsusb | grep 1915        # Nordic Semiconductor —— 能看到 Crazyradio
 **修改无人机的 EEPROM 身份标识**（仅在多架无人机共处一室时需要 —— 相同信道 + 相同地址 = 交叉控制）：用 USB 线连接无人机并运行 provisioning 脚本 —— 它把新的无线信道/地址写入无人机的 EEPROM，并在重新上电后通过无线链路验证：
 
 ```bash
-cd ~/drone-navigation/extension/crazyflie_bridge
+cd ~/drone-navigation-main/extension/crazyflie_bridge
 python provision_drone.py --channel 14 --address E7E7E7E707
 # -> 然后用以下方式连接：./start_bridge.sh --cf-uri radio://0/14/2M/E7E7E7E707
 ```
@@ -218,7 +218,7 @@ python provision_drone.py --channel 14 --address E7E7E7E707
 用一个脚本启动整个 bridge（它会自动激活 `drone-navigation` conda 环境）：
 
 ```bash
-cd ~/drone-navigation/extension/crazyflie_bridge
+cd ~/drone-navigation-main/extension/crazyflie_bridge
 CRAZYFLIE_IP="192.168.0.110" RADIO_URL="radio://0/80/2M/E7E7E7E7E7" \
 TELEMETRY_SERVER="ws://127.0.0.1:8000/api/drone/telemetry/publish" \
 MEDIAMTX_URL="http://127.0.0.1:8889" MEDIAMTX_API="http://127.0.0.1:9997" \
@@ -249,14 +249,14 @@ MEDIAMTX_URL="http://127.0.0.1:8889" MEDIAMTX_API="http://127.0.0.1:9997" \
 
 ```bash
 /usr/lib/postgresql/$(ls /usr/lib/postgresql)/bin/pg_ctl -D ~/pgdata -l ~/pgdata.log start
-cd ~/drone-navigation/server && conda activate drone-navigation && uvicorn app.main:app --reload --port 8000
+cd ~/drone-navigation-main/server && conda activate drone-navigation && uvicorn app.main:app --reload --port 8000
 nohup ~/synapse-venv/bin/python -m synapse.app.homeserver -c ~/synapse-data/homeserver.yaml &
 openclaw gateway --port 18789
 ~/mediamtx_v1.9.0/mediamtx
-cd ~/drone-navigation/extension/simple_webcam && conda activate drone-navigation && \
+cd ~/drone-navigation-main/extension/simple_webcam && conda activate drone-navigation && \
   MEDIAMTX_URL=http://127.0.0.1:8889 MEDIAMTX_API=http://127.0.0.1:9997 LIVESTREAM_ID=crazyflie-drone \
   python simple_webcam.py
-cd ~/drone-navigation/client && npm run dev
+cd ~/drone-navigation-main/client && npm run dev
 # 真实无人机：第 9 节
 ```
 
