@@ -37,6 +37,117 @@ curl -s -X POST http://127.0.0.1:18790/command -H 'Content-Type: application/jso
 若 `127.0.0.1:18790` 不可达（连接拒绝），说明地面站服务没在运行：请用户
 启动 `python cli.py serve` 或打开地面站 GUI，不要继续尝试飞行。
 
+## 截图并发送（微信等渠道）
+
+用户要求"截一张图/拍照/看看画面"时：
+
+1. 抓取地面站摄像头最新一帧：
+
+```bash
+curl -s http://127.0.0.1:18790/capture -o /tmp/gs_snapshot.jpg
+```
+
+2. 检查文件非空且是 JPEG（`file /tmp/gs_snapshot.jpg` 应显示 JPEG 图像数据；
+   curl 返回 503 说明摄像头离线，如实告知用户）。
+3. 调用你的**消息发送工具**（`message`），把 `/tmp/gs_snapshot.jpg` 作为
+   媒体附件发送给**当前对话用户**，可附带一句简短说明（如"这是当前画面截图"）。
+
+注意：截图来自 ESP32 摄像头；摄像头离线时接口返回 503，不要编造图片。
+
+## 识别画面中的人（本地 YOLO）
+
+用户要求"识别可疑人员 / 看看有没有人 / 检测画面"时，**唯一正确方式**是
+调用地面站的 `POST /detect` 接口（见下）。**严禁**自行编写、下载或运行任何
+检测脚本；**严禁**使用 cv2/其他检测方法自行分析画面；**严禁**启动后台进程
+或子任务做检测——这些会极慢且经常失败。直接调接口、直接用返回结果。
+
+1. 对当前帧做本地 YOLO 检测：
+
+```bash
+curl -s -X POST http://127.0.0.1:18790/detect -H 'Content-Type: application/json' -d '{"conf":0.4}'
+```
+
+2. 响应 JSON 含：`count`（人数）、`persons`（数组，每项 `bbox` + `confidence`）、
+   `annotated_path`（标注了方框的图片路径，检测到人时有值）。
+3. 检测到人（count>0）：把 `annotated_path` 图片发送给当前用户，并报告人数与
+   置信度（如"检测到 2 人，最高置信度 0.87"）。
+4. 未检测到人（count=0）：明确告知"当前画面未检测到人"，不要编造。
+5. 接口返回 503/错误：如实说明（摄像头离线或检测器不可用），并建议用户
+   检查摄像头画面与地面站日志。
+6. 整个过程最多调用一次 `/detect`，拿到结果后立即发送图片并总结，
+   不要重复检测、不要多次调用模型。
+
+## 识别彩色物块（红色/绿色/蓝色）
+
+用户要求"识别红色物块 / 找红色方块 / 看看有没有红色目标"时，调用颜色检测
+接口（本地 OpenCV，无需模型，毫秒级）：
+
+```bash
+curl -s -X POST http://127.0.0.1:18790/detect_color -H 'Content-Type: application/json' -d '{"color":"red"}'
+```
+
+`color` 支持 `red` / `green` / `blue`。响应含 `count`（物块数量）、
+`regions`（每个物块的 bbox、面积、占比）、`annotated_path`（画框图片路径）。
+检测到物块：把 `annotated_path` 图片发给当前用户，报告数量与位置；
+没有检测到：明确告知，不要编造。接口 503/错误时如实说明。
+
+## 持续监控任务（定时巡逻）
+
+用户要求"每 30 秒监控红色物块 / 持续检测，识别到才通知我 / 电量低自动停"时，
+启动地面站的持续监控（由地面站后台线程执行，不占用对话）：
+
+```bash
+curl -s -X POST http://127.0.0.1:18790/monitor/start -H 'Content-Type: application/json' \
+  -d '{"interval":30,"color":"red","target":"<当前微信用户ID>","battery_threshold":3.7}'
+```
+
+- `interval`：检测间隔秒数（最小 5，默认 30）。
+- `color`：red/green/blue。
+- `target`：接收通知的微信用户 ID（形如 `xxx@im.wechat`）。优先用当前对话
+  用户；如果无法确定，让用户确认或留空（地面站会尝试从日志解析）。
+- `battery_threshold`：电池低于该值（伏）自动休眠监控（默认 3.7）。
+- 行为：每个周期检测一次；**只有识别到物块才推送微信消息**（附标注图）；
+  电量低于阈值自动停止并推送休眠提示。
+
+其他接口：
+
+```bash
+curl -s http://127.0.0.1:18790/monitor/status       # 查看监控状态
+curl -s -X POST http://127.0.0.1:18790/monitor/stop -H 'Content-Type: application/json' -d '{"reason":"user stopped"}'
+```
+
+启动后立即告知用户："监控已启动，每 30 秒检测一次红色物块，识别到会推送；
+电量低于 3.7V 自动休眠。" 不要反复查询状态或重复启动。
+
+## 定时任务（每 N 秒发送固定内容）
+
+用户要求"每 30 秒给我发一次 X / 定时发送"时，用 OpenClaw cron 创建任务。
+**必须用 `--command` 固定输出，禁止用 `--message` 驱动 agent**——agent
+驱动的任务每次都会自由发挥（表情、解释、废话），只有 `--command` 才能
+保证推送内容就是用户要求的那句话，且不消耗模型。
+
+```bash
+openclaw cron add --name <任务名> --every 30s \
+  --channel openclaw-weixin --to <当前微信用户ID> \
+  --command 'echo 你好' --announce
+```
+
+- `--every`：间隔，支持秒（如 `30s`、`5m`、`1h`）。
+- `--command 'echo <内容>'`：固定输出内容（要发的原文，例如 `echo 你好`）。
+- `--to`：当前微信用户 ID（形如 `xxx@im.wechat`）；无法确定时让用户确认。
+- `--announce`：把命令输出作为消息推送到微信。
+
+管理任务：
+
+```bash
+openclaw cron list                    # 查看所有任务
+openclaw cron rm --name <任务名>       # 删除任务（停止）
+```
+
+创建后回复用户**只允许一行**，格式：
+`已创建定时任务：<任务名>，每 <间隔> 发送"<内容>"。停止请说"停止任务 <任务名>"。`
+禁止添加表情、解释、Markdown 或任何额外文字。
+
 ## 工具要点
 
 - `get_status`：起飞前必调。检查 `connected`（是否连接）、`locked`（是否锁定）、
