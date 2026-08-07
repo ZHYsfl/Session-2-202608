@@ -229,12 +229,19 @@ class MainWindow(QMainWindow):
         self._btn_estop.clicked.connect(
             lambda: self._ctrl.request("estop")
         )
+        self._btn_estop_unlock = QPushButton("解除锁存")
+        self._btn_estop_unlock.setEnabled(False)
+        self._btn_estop_unlock.setStyleSheet(
+            "background:#f39c12; color:white; font-weight:bold; padding:10px;"
+        )
+        self._btn_estop_unlock.clicked.connect(self._on_estop_unlock)
         for b in (
             self._btn_takeoff,
             self._btn_land,
             self._btn_hover,
             self._btn_stop,
             self._btn_estop,
+            self._btn_estop_unlock,
         ):
             b.setFocusPolicy(Qt.NoFocus)
             v.addWidget(b)
@@ -411,26 +418,60 @@ class MainWindow(QMainWindow):
         )
         self._attitude.set_attitude(s["roll"], s["pitch"], s["yaw"])
 
-        if s["flying"]:
+        if s.get("estop_latched"):
+            self._btn_estop.setText("⛔ 已锁存 (X)")
+            self._btn_estop.setStyleSheet(
+                "background:#581a1a; color:#ffd0d0; font-weight:bold;"
+                "font-size:24px; padding:22px; border-radius:8px;"
+            )
+            self._btn_estop_unlock.setEnabled(True)
+            self._btn_estop_unlock.setText("⚠ 解除锁存（确认安全后点击）")
+            self._btn_estop_unlock.setStyleSheet(
+                "background:#f39c12; color:white; font-weight:bold;"
+                "padding:10px; border-radius:6px;"
+            )
+        elif s["flying"]:
             self._flash = not self._flash
             bg = "#e74c3c" if self._flash else "#a93226"
+            self._btn_estop.setText("急停 E-STOP (X)")
             self._btn_estop.setStyleSheet(
                 f"background:{bg}; color:white; font-weight:bold;"
                 "font-size:24px; padding:22px; border-radius:8px;"
             )
+            self._btn_estop_unlock.setEnabled(False)
+            self._btn_estop_unlock.setText("解除锁存")
+            self._btn_estop_unlock.setStyleSheet(
+                "background:#f39c12; color:white; font-weight:bold;"
+                "padding:10px; border-radius:6px;"
+            )
         else:
+            self._btn_estop.setText("急停 E-STOP (X)")
             self._btn_estop.setStyleSheet(
                 "background:#c0392b; color:white; font-weight:bold;"
                 "font-size:24px; padding:22px; border-radius:8px;"
             )
+            self._btn_estop_unlock.setEnabled(False)
+            self._btn_estop_unlock.setText("解除锁存")
+            self._btn_estop_unlock.setStyleSheet(
+                "background:#f39c12; color:white; font-weight:bold;"
+                "padding:10px; border-radius:6px;"
+            )
 
-        if s["locked"]:
+        if s.get("estop_latched"):
+            self._lbl_locked.setText(
+                "⛔ E-STOP 已锁存：必须断电重启无人机后才能解锁起飞"
+            )
+        elif s["locked"]:
             self._lbl_locked.setText("⚠ LOCKED：请断电重启无人机后再起飞")
         else:
             self._lbl_locked.setText("")
 
         for line in self._ctrl.drain_log():
             self._log(line)
+
+    def _on_estop_unlock(self):
+        self._ctrl.clear_estop_latch()
+        self._log("已人工解除 E-STOP 锁存（确认无人机安全后可起飞）")
 
     def _update_video(self):
         # Keep the decoder's target in sync with the actual label size.

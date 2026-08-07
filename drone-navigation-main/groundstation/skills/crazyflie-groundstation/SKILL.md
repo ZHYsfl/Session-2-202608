@@ -156,7 +156,10 @@ openclaw cron rm --name <任务名>       # 删除任务（停止）
 - `move(vx, vy, vz, yawrate, duration)`：速度移动，`duration` 必须 ≤ 2 秒。
 - `land()`：受控降落，任务结束必须调用。
 - `hover()`：悬停。
-- `stop()` / `estop()`：立即切电机（空中会坠落），仅紧急情况使用。
+- `stop()` / `estop()`：立即切电机（空中会坠落），仅紧急情况使用；
+  `estop` 后地面站会锁存，`get_status` 显示 `estop_latched=true`，
+   takeoff/spin_test 将被拒绝；解除需由操作员重启无人机或在地面站
+   GUI 点击"解除锁存"，agent 没有任何解锁接口。
 - `spin_test(power, duration)`：旋翼逐个慢速测试（m1→m4），起飞前必做。
 
 ## 安全规则（强制）
@@ -169,6 +172,11 @@ openclaw cron rm --name <任务名>       # 删除任务（停止）
 5. 失控、倾斜过大、接近障碍物、通讯不稳 → 立即 `estop`（坠机式急停，仅紧急时用）。
 6. 一个时刻只有一个进程占用无线电；操作前确认 bridge、GUI、CLI 没有同时在跑。
 7. 已在飞行时不要重复 `takeoff`，先 `land` 再起飞。
+8. 急停（`estop`）后地面站进入锁存：任何通道的 takeoff/spin_test 都会被
+   拒绝。解锁只有两种途径：① 对无人机断电重启（掉线超过 10 秒后重连）
+   自动解锁；② 操作员在地面站 GUI 人工点击"解除锁存"。agent 没有任何
+   解锁接口，看到 `estop_latched=true` 时先请用户处理（重启无人机或点击
+   解除锁存），不要反复尝试起飞，也不要编造解锁命令。
 
 ## 响应格式
 

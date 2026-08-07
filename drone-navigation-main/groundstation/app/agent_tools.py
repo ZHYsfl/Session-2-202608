@@ -162,6 +162,11 @@ def make_executor(controller, max_velocity_xy=0.5, max_velocity_z=0.5, max_yawra
             if height <= 0 or height > 1.5:
                 return _result(False, f"takeoff height out of range: {height}")
             snap = _snapshot()
+            if snap.get("estop_latched"):
+                return _result(
+                    False,
+                    "drone E-STOP latched, power-cycle the drone to unlock",
+                )
             if snap.get("locked"):
                 return _result(False, "drone is LOCKED, power-cycle required")
             if snap.get("battery_v") is not None and snap["battery_v"] < 3.7:
@@ -201,6 +206,12 @@ def make_executor(controller, max_velocity_xy=0.5, max_velocity_z=0.5, max_yawra
         if name == "spin_test":
             power = int(args.get("power", 4000))
             duration = float(args.get("duration", 2.0))
+            snap = _snapshot()
+            if snap.get("estop_latched"):
+                return _result(
+                    False,
+                    "drone E-STOP latched, power-cycle the drone to unlock",
+                )
             if not (1000 <= power <= 60000):
                 return _result(False, f"spin_test power out of range: {power}")
             if duration <= 0 or duration > 5:

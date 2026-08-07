@@ -98,6 +98,10 @@ curl -s -X POST http://127.0.0.1:18790/command \
    `04_flying.py`、GUI 地面站没有同时在跑。
 6. **不要连续多次 `takeoff`**：已在飞行时 `takeoff` 会被忽略，
    先 `land` 再起飞。
+7. **`estop` 后会锁存**：急停后 `get_status` 的 `estop_latched=true`，
+   takeoff/spin_test 会被拒绝；解锁只能由操作员在地面站 GUI 点击
+   "解除锁存"或对无人机断电重启（掉线超过 10 秒后重连），agent 没有任何
+   解锁接口，不要尝试解锁或反复起飞。
 
 ## 通过地面站 GUI 聊天面板操作（推荐）
 
