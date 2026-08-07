@@ -21,6 +21,7 @@ Safety model (mirrors extension/simple_crazyflie/04_flying.py):
 """
 
 import logging
+import json
 import os
 import queue
 import threading
@@ -47,6 +48,7 @@ MOVE_WATCHDOG_S = 0.5      # s, stale move command -> hover
 LINK_WATCHDOG_S = 3.5      # s, no telemetry packet -> treat link as dead
 LINK_STALE_BREAK_S = 1.0   # s, long loops exit early once the link is stale
 CONNECT_TIMEOUT_S = 15.0   # s, abandon a stuck radio connection attempt
+ESTOP_UNLOCK_OFFLINE_S = 10.0  # s, offline before reconnect => drone restart
 
 BATTERY_TAKEOFF_MIN_V = 3.7
 BATTERY_WARN_V = 3.8
@@ -94,6 +96,8 @@ class CrazyflieController:
         self._stop = threading.Event()
         self._thread = None
         self._scf = None
+        self._estop_latched = False
+        self._offline_since = None
 
         self._lock = threading.Lock()
         self._snapshot = {
@@ -101,6 +105,7 @@ class CrazyflieController:
             "flying": False,
             "armed": False,
             "locked": False,
+            "estop_latched": False,
             "x": 0.0,
             "y": 0.0,
             "z": 0.0,
@@ -121,6 +126,7 @@ class CrazyflieController:
         self._armed = False
 
         self._log_lines = queue.Queue(maxsize=500)
+        self._load_estop_latch()
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -151,6 +157,8 @@ class CrazyflieController:
         long-running move/takeoff/land is being executed.
         """
         if action in ("estop", "stop"):
+            if action == "estop":
+                self._set_estop_latch(True)
             self._urgent.put({"action": action, **kwargs})
         else:
             self._commands.put({"action": action, **kwargs})
@@ -158,6 +166,19 @@ class CrazyflieController:
     def emergency_stop(self):
         """Queue an immediate motor cut (alias for request('estop'))."""
         self.request("estop")
+
+    def clear_estop_latch(self):
+        """Manual unlock by a human at the ground station.
+
+        The auto-unlock path only fires after a confirmed drone restart;
+        this is the operator override for situations verified as safe
+        (drone on the ground, props clear).  Intentionally NOT exposed
+        over HTTP so remote agents (e.g. OpenClaw via WeChat) can never
+        clear the latch themselves.
+        """
+        if self._estop_latched:
+            self._log("[GS] E-STOP latch cleared manually by operator")
+        self._set_estop_latch(False)
 
     def snapshot(self):
         """Thread-safe copy of the latest telemetry + state."""
@@ -189,6 +210,8 @@ class CrazyflieController:
                 self._set("flying", False)
                 self._set("armed", False)
                 self._set("last_error", str(exc))
+                if self._offline_since is None:
+                    self._offline_since = time.time()
                 self._log(f"[GS] Link error: {exc}")
             if not self._stop.is_set():
                 time.sleep(2.0)
@@ -215,6 +238,7 @@ class CrazyflieController:
                     self._set("connected", True)
                     self._set("last_error", None)
                     self._log(f"[GS] Connected: {self.uri}")
+                    self._maybe_clear_estop_latch()
                     self._setup_logging(scf.cf)
                     # Detect link loss even when cflib stays silent: a dead
                     # drone stops producing telemetry long before any
@@ -251,6 +275,8 @@ class CrazyflieController:
             self._set("flying", False)
             self._set("armed", False)
             self._set("last_error", "connect timeout (radio driver stuck)")
+            if self._offline_since is None:
+                self._offline_since = time.time()
             self._log("[GS] Connect attempt timed out, will retry")
             return
         # Link established: block until the attempt thread ends (link lost
@@ -265,6 +291,8 @@ class CrazyflieController:
         self._set("flying", False)
         self._set("armed", False)
         self._set("last_error", f"link lost: {msg}")
+        if self._offline_since is None:
+            self._offline_since = time.time()
         self._log(f"[GS] Link lost: {msg} (reconnecting...)")
 
     def _link_stale(self):
@@ -349,6 +377,12 @@ class CrazyflieController:
             self._log(
                 "[GS] REFUSED takeoff: drone is LOCKED "
                 "(power-cycle the drone first)"
+            )
+            return
+        if self._estop_latched:
+            self._log(
+                "[GS] REFUSED takeoff: E-STOP latched "
+                "(power-cycle the drone to unlock)"
             )
             return
         vbat = self._snapshot["battery_v"]
@@ -442,6 +476,12 @@ class CrazyflieController:
 
         if self._flying:
             self._log("[GS] spin_test refused: drone is flying")
+            return
+        if self._estop_latched:
+            self._log(
+                "[GS] spin_test refused: E-STOP latched "
+                "(power-cycle the drone to unlock)"
+            )
             return
         self._log(
             f"[GS] Spin test: power={power} ({100 * power / 65535:.0f}%), "
@@ -623,6 +663,82 @@ class CrazyflieController:
     def _on_link(self, ts, data, logconf):
         with self._lock:
             self._snapshot["link_quality"] = data.get("crtp.link_quality", 0.0)
+
+    # ------------------------------------------------------------------ #
+    # E-STOP latch: once estop fires, takeoff/spin are refused until the
+    # drone is power-cycled.  A "restart" is only accepted when the link
+    # went fully offline and a new connection is established after the
+    # drone was unreachable for ESTOP_UNLOCK_OFFLINE_S seconds, so radio
+    # blips never clear the latch.  The latch survives ground station
+    # restarts via cache/estop_latch.json.
+    # ------------------------------------------------------------------ #
+
+    def _set_estop_latch(self, latched):
+        with self._lock:
+            self._estop_latched = bool(latched)
+            self._snapshot["estop_latched"] = self._estop_latched
+            connected = self._snapshot["connected"]
+        if latched:
+            if self._offline_since is None and not connected:
+                self._offline_since = time.time()
+            self._persist_estop_latch()
+            self._log(
+                "[GS] E-STOP latched — takeoff/spin refused until drone restart"
+            )
+        else:
+            self._offline_since = None
+            self._persist_estop_latch(clear=True)
+            self._log("[GS] E-STOP latch cleared")
+
+    def _maybe_clear_estop_latch(self):
+        if not self._estop_latched:
+            return
+        if self._offline_since is not None and (
+            time.time() - self._offline_since >= ESTOP_UNLOCK_OFFLINE_S
+        ):
+            self._set_estop_latch(False)
+            self._log("[GS] Drone restart confirmed (offline >= threshold) — unlocked")
+        else:
+            self._log(
+                "[GS] Link reconnected but restart not confirmed — E-STOP latch stays"
+            )
+
+    def _persist_estop_latch(self, clear=False):
+        path = os.path.join(self._cache_dir, "estop_latch.json")
+        try:
+            if clear:
+                if os.path.exists(path):
+                    os.remove(path)
+                return
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(
+                    {
+                        "latched": True,
+                        "at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "offline_since": self._offline_since,
+                    },
+                    fh,
+                )
+        except Exception as exc:
+            self._log(f"[GS] E-STOP latch persistence failed: {exc}")
+
+    def _load_estop_latch(self):
+        path = os.path.join(self._cache_dir, "estop_latch.json")
+        try:
+            if not os.path.exists(path):
+                return
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if data.get("latched"):
+                self._estop_latched = True
+                self._snapshot["estop_latched"] = True
+                # A fresh offline -> reconnect cycle must be observed by
+                # this process before unlocking; stale timestamps from a
+                # previous session never count.
+                self._offline_since = None
+                self._log("[GS] E-STOP latch restored from previous session")
+        except Exception as exc:
+            self._log(f"[GS] E-STOP latch load failed: {exc}")
 
     def _set(self, key, value):
         with self._lock:
