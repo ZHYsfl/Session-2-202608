@@ -20,7 +20,7 @@ class MjpegFetcher(threading.Thread):
     def __init__(self, url="http://10.219.80.107/stream"):
         super().__init__(daemon=True)
         self._url = url
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._frame = None
         self._seq = 0
@@ -28,7 +28,7 @@ class MjpegFetcher(threading.Thread):
 
     def run(self):
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 req = urllib.request.Request(
                     self._url,
@@ -44,7 +44,7 @@ class MjpegFetcher(threading.Thread):
                 with opener.open(req, timeout=8) as resp:
                     self._set_connected(True)
                     buf = bytearray()
-                    while not self._stop.is_set():
+                    while not self._stop_event.is_set():
                         chunk = resp.read(8192)
                         if not chunk:
                             break
@@ -69,7 +69,7 @@ class MjpegFetcher(threading.Thread):
                             buf = bytearray(buf[eoi + 2 :])
             except Exception:
                 self._set_connected(False)
-            if not self._stop.is_set():
+            if not self._stop_event.is_set():
                 time.sleep(2)
 
     def latest(self):
@@ -89,19 +89,20 @@ class MjpegFetcher(threading.Thread):
         self._url = url
 
     def restart(self):
-        """Stop and start a fresh thread (call after changing the URL)."""
-        self._stop.set()
-        if self.is_alive():
-            self.join(timeout=3)
-        self._stop.clear()
+        """Reset state after a URL switch.
+
+        The fetch loop is long-lived and re-reads ``self._url`` on every
+        attempt, so there is nothing to restart: just drop the stale frame
+        and connection flag.  Calling ``Thread.start()`` here would crash
+        with "threads can only be started once".
+        """
         with self._lock:
             self._frame = None
             self._seq = 0
             self._connected = False
-        self.start()
 
     def stop(self):
-        self._stop.set()
+        self._stop_event.set()
         if self.is_alive():
             self.join(timeout=3)
 
@@ -121,7 +122,7 @@ class VideoDecoder(threading.Thread):
         super().__init__(daemon=True)
         self._fetcher = fetcher
         self._poll_s = poll_s
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._image = None
         self._last_seq = -1
@@ -147,12 +148,12 @@ class VideoDecoder(threading.Thread):
             return self._image
 
     def stop(self):
-        self._stop.set()
+        self._stop_event.set()
         if self.is_alive():
             self.join(timeout=3)
 
     def run(self):
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 seq, frame = self._fetcher.latest_with_seq()
                 if frame and seq != self._last_seq:
