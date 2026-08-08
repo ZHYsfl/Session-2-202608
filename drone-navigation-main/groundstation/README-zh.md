@@ -195,11 +195,14 @@ cp config.example.json config.json
 ```json
 {
   "radio_uri": "radio://0/12/2M/8A3F5C2D9E",
-  "camera_url": "http://10.219.80.107/stream",
+  "camera_url": "http://10.252.54.107/stream",
   "command_server_host": "127.0.0.1",
   "command_server_port": 18790,
   "command_server_token": "",
   "takeoff_height": 0.3,
+  "monitor": {
+    "wechat_target": ""
+  },
   "openclaw": {
     "base_url": "http://127.0.0.1:18789",
     "token": "openclaw-drone-navigation",
@@ -241,10 +244,21 @@ python provision_drone.py --read-only
 
 ### 3.2 camera_url（ESP32 摄像头）
 
-摄像头 IP 每次连接热点可能变化。在 Windows 的热点管理页面找到名为
-`espressif` 的设备，IP 例如 `10.219.80.107`，填到 `camera_url`。
+摄像头 IP 每次连接热点可能变化。**PC 必须和摄像头在同一个网段**（连同一个
+热点），否则画面永远"加载中"。在手机热点的设备管理页面找到名为
+`espressif` 的设备，取它的当前 IP（例如 `10.252.54.107`），填到
+`camera_url`。用下面命令验证可达：
+
+```bash
+curl -s -m 5 -o /dev/null -w "%{http_code}\n" http://<摄像头IP>/stream   # 应返回 200
+```
+
 摄像头连的是 2.4GHz 热点（手机热点名字如 `lclMagic6`）。IP 变了在 GUI
-的视频地址框直接改，点"连接"即可。
+的视频地址框直接改，点"连接"即可（无需重启地面站）。
+
+> 注意：部分手机热点会把"智能设备"分到独立网段（如 10.219.80.x）并与
+> 电脑隔离。若 PC 连上热点后 `curl` 还是不通，去热点设置里关闭"智能设备
+> 专属网络/AP 隔离"后重启摄像头，让摄像头回到与 PC 同网段。
 
 > 建议提供给自动化 agent 的提示词：
 ```txt
@@ -267,7 +281,7 @@ bash run_gui.sh          # 会自动启动 ibus 输入法并打开窗口
 > 建议提供给自动化 agent 的提示词：
 ```txt
 请参照第 4 节启动地面站 GUI（确认无线电已 attach、config.json 已配置），
-告诉我窗口是否正常打开、聊天面板是否在线；报 libxcb 错误按第 7 节处理。
+告诉我窗口是否正常打开、底部日志面板是否有输出；报 libxcb 错误按第 7 节处理。
 ```
 
 ### 4.1 界面布局
@@ -279,7 +293,7 @@ bash run_gui.sh          # 会自动启动 ibus 输入法并打开窗口
 | 中上 | 姿态仪表：横滚弧形表 / 俯仰气泡条 / 航向罗盘 |
 | 中 | 电池 / 高度 / 链路进度条 + 数字 |
 | 右侧 | 飞行控制按钮 + 方向键 + 急停 |
-| 底部 | OpenClaw 聊天面板 |
+| 底部 | OpenClaw 网关日志监控面板（对话指挥改走微信 / HTTP，见第 5 节） |
 
 ### 4.2 按键
 
@@ -304,7 +318,10 @@ bash run_gui.sh          # 会自动启动 ibus 输入法并打开窗口
 - **降落**：受控缓降，落地后自动切电机并解臂
 - **悬停**：停住水平移动，保持当前高度
 - **停止 / 急停（E-STOP）**：立即切断电机——**空中会直接掉下来**，
-  优先用降落。急停走高优先级通道，即使正在执行长移动也会立即生效
+  优先用降落。急停走高优先级通道，即使正在执行长移动也会立即生效。
+  **急停后会锁存**：任何通道的起飞/旋翼测试都会被拒绝，直到操作员点击
+  GUI 上的"解除锁存"按钮，或对无人机断电重启（锁存状态会跨地面站重启
+  保留）。空中急停若触发固件 LOCKED，仍需断电重启。
 
 > 建议提供给自动化 agent 的提示词：
 ```txt
@@ -332,7 +349,7 @@ python cli.py spin-test --power 4000 --duration 2
 
 ---
 
-## 5. OpenClaw 集成（聊天指挥无人机）
+## 5. OpenClaw 集成（指挥无人机）
 
 ### 5.1 开启 gateway 聊天端点（只需一次）
 
@@ -366,11 +383,50 @@ setsid nohup openclaw gateway --port 18789 > ~/openclaw.log 2>&1 < /dev/null &
 用 `curl -s http://127.0.0.1:18789/health` 验证后告诉我结果。
 ```
 
-### 5.2 配置 token 与对话
+### 5.2 模型切换（deepseek / 本地微调 2B / 未微调 2B）
+
+OpenClaw 的主模型可以在三个之间切换，工具脚本 `tools/switch_model.py`
+（在 WSL 里运行）：
+
+```bash
+cd /mnt/c/Users/10206/Desktop/Session-2-202608/drone-navigation-main/groundstation
+python3 tools/switch_model.py            # 交互菜单：键入 1/2/3
+python3 tools/switch_model.py 1          # 1 = deepseek-v4-flash（云端 API，thinking=medium）
+python3 tools/switch_model.py 2          # 2 = qwen3.5-2b-sft 微调模型（本地 :6006，thinking=low）
+python3 tools/switch_model.py 3          # 3 = qwen3.5-2b 未微调模型（本地 :6008，thinking=low）
+python3 tools/switch_model.py 2 --thinking medium   # 临时指定 thinking 档位
+```
+
+切换会自动：备份 `~/.openclaw/openclaw.json`、注册/更新本地 provider、
+改主模型、联动 thinking 档位、重启网关并自检（health + 日志确认）。
+本地 2B 模型通过 SSH 隧道访问，隧道由 `tools/start_vllm_tunnel.sh`
+管理（autossh 自动重连、SSH 密钥免密）：
+
+```bash
+bash tools/start_vllm_tunnel.sh start    # 启动（断线自动重连）
+bash tools/start_vllm_tunnel.sh status   # 查看状态
+bash tools/start_vllm_tunnel.sh stop     # 停止
+```
+
+> 建议提供给自动化 agent 的提示词：
+```txt
+请按 5.2 用 switch_model.py 查看当前模型（1/2/3 对应 deepseek/微调2B/未微调2B），
+切换前先 `bash tools/start_vllm_tunnel.sh status` 确认隧道在跑；不要随意切换模型。
+```
+
+### 5.3 配置 token 与指挥方式（微信 / HTTP）
 
 把 gateway token（`~/.openclaw/openclaw.json` 里 `gateway.auth.token`）填到
-`config.json` 的 `openclaw.token`。启动 GUI 后底部聊天面板显示
-`OpenClaw: 在线`，就可以直接对话：
+`config.json` 的 `openclaw.token`。GUI 底部现在是 OpenClaw 日志监控面板，
+对话指挥走**微信（ClawBot）**或 **HTTP**：
+
+**微信**：给绑定的 ClawBot 机器人发指令（"检查无人机状态""起飞到 0.4 米"），
+OpenClaw 通过 `openclaw-weixin` 渠道接收、按技能执行并把回复（含图片）
+回传；
+
+**HTTP**：`curl http://127.0.0.1:18790/...` 直接操作（见 5.4）。
+
+常用指令示例：
 
 - "检查无人机状态，能不能起飞"
 - "起飞到 0.4 米并悬停"
@@ -378,19 +434,16 @@ setsid nohup openclaw gateway --port 18789 > ~/openclaw.log 2>&1 < /dev/null &
 - "前进 1 秒然后降落"
 - "立即急停"
 
-勾选"附带遥测"会把当前无人机快照发给 OpenClaw。回复实时流式显示；
-如果它执行长任务，可用"停止"按钮中断。
-
 > OpenClaw 的 main agent 首次使用会做初始化对话（可能问你要名字），
-> 先在聊天面板里跟它聊完，之后就能正常指挥。
+> 先在微信里跟它聊完，之后就能正常指挥。
 
 > 建议提供给自动化 agent 的提示词：
 ```txt
-请按 5.2 把 gateway token 填到 config.json 的 openclaw.token，
-启动 GUI 确认聊天面板“OpenClaw: 在线”，并向它发“检查无人机状态，能不能起飞”验证。
+请按 5.3 把 gateway token 填到 config.json 的 openclaw.token，
+并通过 HTTP 或微信渠道验证"检查无人机状态"能正常回复。
 ```
 
-### 5.3 无界面模式（脚本/自动化）
+### 5.4 无界面模式（脚本/自动化）
 
 完整接口见 [OPENCLAW.md](OPENCLAW.md)。快速示例：
 
@@ -414,8 +467,29 @@ curl -s -X POST http://127.0.0.1:18790/command \
 
 > 建议提供给自动化 agent 的提示词：
 ```txt
-请按 5.3 和 OPENCLAW.md 验证地面站接口（status / serve / POST command 格式），
+请按 5.4 和 OPENCLAW.md 验证地面站接口（status / serve / POST command 格式），
 没有我的允许不要真的执行 takeoff。
+```
+
+### 5.5 视觉与持续监控（截图 / YOLO / 颜色 / 巡逻）
+
+地面站内置本地视觉能力，聊天里直接说即可（OpenClaw 按技能
+`skills/crazyflie-groundstation/SKILL.md` 执行）：
+
+| 指令示例 | 后端 | 返回 |
+|---|---|---|
+| "截一张图发给我" | `GET /capture` | 最新一帧 JPEG |
+| "识别画面里的人" | `POST /detect`（YOLO，本地） | 人数/置信度 + 标注图 |
+| "找红色/绿色/蓝色物块" | `POST /detect_color`（HSV） | 数量/位置 + 标注图 |
+| "每 30 秒监控红色物块，识别到才通知我" | `POST /monitor/start` | 后台巡逻，命中推微信，低电量自动休眠 |
+
+这些能力都走本地（不依赖云端视觉模型），模型只消费结构化结果、不"看"
+图片。详细接口见 [OPENCLAW.md](OPENCLAW.md) 与 SKILL.md。
+
+> 建议提供给自动化 agent 的提示词：
+```txt
+请按 5.5 说明地面站的视觉与监控能力（截图/YOLO/颜色/持续监控），
+强调"识别"必须调 /detect 接口，不要自己写脚本分析画面。
 ```
 
 ---
@@ -430,6 +504,9 @@ curl -s -X POST http://127.0.0.1:18790/command \
 6. LOCKED 状态必须断电重启解锁
 7. 一个时刻只有一个程序占用无线电
 8. 空中急停是坠机式急停，仅紧急情况使用
+9. **急停（E-STOP）后会锁存**：任何通道的起飞/旋翼测试都会被拒绝，
+   只能在地面站 GUI 点击"解除锁存"或对无人机断电重启；远程 agent
+   （微信/OpenClaw）没有解锁接口
 
 > 建议提供给自动化 agent 的提示词：
 ```txt
@@ -449,12 +526,15 @@ curl -s -X POST http://127.0.0.1:18790/command \
 | LOCKED 拒绝起飞 | 无人机断电重启 |
 | 起飞报 `arming failed` | 先断电重启无人机等自检完成；检查有没有其他程序占用无线电（`pgrep -af python`） |
 | 电机停不下来 | 立即按 X 急停；若断连，等待电池耗尽或拔无线电棒（看门狗会切电机） |
-| 视频一直加载 | 摄像头热点是否连上；`camera_url` 的 IP 变了；勾选"画面翻转" |
+| 视频一直加载 | 摄像头热点是否连上；**PC 与摄像头必须同一网段**（热点把智能设备隔离时去热点设置关"智能设备网络"）；`camera_url` 的 IP 变了；`curl http://<IP>/stream` 验证 |
+| 切换 2B 模型报 vLLM 不可达 | 隧道断了：`bash tools/start_vllm_tunnel.sh status`，再 `... start` |
+| OpenClaw 报 Auto-compaction 无法恢复 | 本地 2B 上下文被占满：换 flash（`switch_model.py 1`）或 `/compact` / 开新会话 |
+| 急停后无法起飞 | E-STOP 锁存：GUI 点"解除锁存"或无人机断电重启 |
 | 中文显示方块 | `sudo apt install -y fonts-noto-cjk` 后重启 |
 | 输入框无法输入中文 | 装 ibus + ibus-libpinyin（见 2.5），用 `bash run_gui.sh` 启动 |
 | PySide6 报 libxcb 错误 | `sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1` |
 | 端口 18790 被占用 | `python cli.py serve --port 18791` 或在 config.json 改端口 |
-| 聊天面板"未连接" | gateway 没在跑：`curl -s http://127.0.0.1:18789/health`；端点未开启见 5.1 |
+| OpenClaw 无响应 / 日志面板无输出 | gateway 没在跑：`curl -s http://127.0.0.1:18789/health`；端点未开启见 5.1；模型不可达见"切换 2B 模型报 vLLM 不可达" |
 | 聊天报 401 | `config.json` 的 `openclaw.token` 与 `~/.openclaw/openclaw.json` 的 `gateway.auth.token` 不一致 |
 | apt 下载卡死 | 换清华镜像（见 2.5） |
 | `motorPowerSet` 参数不存在 | 删除 `groundstation/cache/` 后重试 |
@@ -478,13 +558,20 @@ groundstation/
 ├── config.json              # 本地配置（已 gitignore）
 ├── README-zh.md             # 本手册
 ├── OPENCLAW.md              # OpenClaw 操作接口详细说明
+├── PROJECT-DESIGN-zh.md     # 项目设计说明（开题报告）
+├── skills/crazyflie-groundstation/SKILL.md   # OpenClaw 技能定义
+├── tools/
+│   ├── switch_model.py       # 模型切换（deepseek / 微调2B / 未微调2B）
+│   └── start_vllm_tunnel.sh  # vLLM SSH 隧道（autossh 自动重连）
 └── app/
     ├── config.py            # 配置加载
     ├── controller.py        # 核心：连接/遥测/飞行/急停/旋翼测试
     ├── command_server.py    # 本地 HTTP JSON API
     ├── openclaw_client.py   # OpenClaw 聊天客户端（SSE）
+    ├── detector.py          # YOLO 人形检测 + HSV 颜色检测
+    ├── monitor.py           # 持续监控巡逻（周期检测 + 微信推送）
     ├── video.py             # ESP32 MJPEG 拉流
-    └── ui/                  # PySide6 界面
+    └── ui/                  # PySide6 界面（含日志监控面板）
 ```
 
 > 建议提供给自动化 agent 的提示词：

@@ -1,6 +1,6 @@
 {
   "radio_uri": "radio://0/12/2M/8A3F5C2D9E",
-  "camera_url": "http://10.219.80.107/stream",
+  "camera_url": "http://10.252.54.107/stream",
   "command_server_host": "127.0.0.1",
   "command_server_port": 18790,
   "command_server_token": "",
